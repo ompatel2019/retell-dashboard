@@ -67,9 +67,9 @@ export function Sidebar({ className, collapsed, onToggle }: SidebarProps) {
       <div className="flex h-16 items-center justify-between px-4 border-b">
         <h1 className={cn(
           "font-semibold transition-all duration-200",
-          collapsed ? "opacity-0" : "opacity-100"
+          collapsed ? "hidden" : "block"
         )}>
-          Retell
+          Byt.
         </h1>
         <Button
           variant="ghost"
