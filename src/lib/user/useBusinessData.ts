@@ -18,15 +18,20 @@ export function useBusinessData(user: User | null) {
       setLoading(true);
       setError(null);
       
+      console.log('Fetching business data for user:', user);
+      
       try {
         const data = await getCurrentUserBusiness(user);
+        console.log('Business data result:', data);
         if (data) {
           setBusinessData(data);
         } else {
-          setError('No business data found for this user');
+          setError('No business data found for this user. Please run the setup script or contact your administrator.');
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to fetch business data');
+        const errorMessage = err instanceof Error ? err.message : 'Failed to fetch business data';
+        console.error('Business data fetch error:', err);
+        setError(errorMessage);
       } finally {
         setLoading(false);
       }
@@ -41,15 +46,20 @@ export function useBusinessData(user: User | null) {
     setLoading(true);
     setError(null);
     
+    console.log('Refetching business data for user:', user);
+    
     try {
       const data = await getCurrentUserBusiness(user);
-      if (data) {
-        setBusinessData(data);
-      } else {
-        setError('No business data found for this user');
-      }
+      console.log('Business data refetch result:', data);
+              if (data) {
+          setBusinessData(data);
+        } else {
+          setError('No business data found for this user. Please run the setup script or contact your administrator.');
+        }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch business data');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch business data';
+      console.error('Business data refetch error:', err);
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }

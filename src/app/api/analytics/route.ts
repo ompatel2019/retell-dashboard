@@ -13,6 +13,18 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // Check paused state via businesses row (allowed by RLS)
+  const { data: biz, error: bizError } = await supabase
+    .from("businesses")
+    .select("id, paused, paused_reason, paused_until")
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .single();
+
+  if (!bizError && biz?.paused) {
+    return NextResponse.json({ error: "Account paused" }, { status: 403 });
+  }
+
   // This will be scoped by RLS (business_id in current_business_ids())
   const { data, error } = await supabase
     .from("calls")
