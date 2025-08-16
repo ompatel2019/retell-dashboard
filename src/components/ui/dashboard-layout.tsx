@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { Sidebar } from "./sidebar";
 import { Header } from "./header";
-import { Button as SidebarToggleButton } from "./button";
 import { useBusinessContext } from "@/lib/user/BusinessContext";
 import {
   Dialog,
