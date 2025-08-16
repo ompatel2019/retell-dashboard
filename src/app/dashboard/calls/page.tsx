@@ -4,8 +4,13 @@ import { useEffect, useState } from "react";
 import { DashboardLayout } from "@/components/ui/dashboard-layout";
 import { BusinessProviderWrapper } from "@/components/providers/BusinessProviderWrapper";
 import { createClient } from "@/lib/supabase/client";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+// import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import { useRouter } from "next/navigation";
+
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 type Call = {
   id: string;
@@ -18,21 +23,49 @@ type Call = {
   summary: string | null;
   transcript: string | null;
   created_at: string;
+  disconnection_reason?: string | null;
 };
 
 function CallsContent() {
   const [calls, setCalls] = useState<Call[]>([]);
   const [loading, setLoading] = useState(true);
   const supabase = createClient();
+  const router = useRouter();
+  const [q, setQ] = useState("");
+  const [status, setStatus] = useState<string>("all");
+  const [direction, setDirection] = useState<string>("all");
+  const [startDate, setStartDate] = useState<string>("");
+  const [endDate, setEndDate] = useState<string>("");
 
   useEffect(() => {
     async function fetchCalls() {
       try {
-        const { data, error } = await supabase
+        let query = supabase
           .from('calls')
           .select('*')
-          .order('created_at', { ascending: false })
-          .limit(50);
+          .order('started_at', { ascending: false })
+          .limit(100);
+        if (status !== 'all') query = query.eq('status', status);
+        if (direction !== 'all') query = query.eq('direction', direction);
+        if (startDate) query = query.gte('started_at', new Date(startDate).toISOString());
+        if (endDate) {
+          const end = new Date(endDate); end.setHours(23,59,59,999);
+          query = query.lte('started_at', end.toISOString());
+        }
+        if (q.trim().length > 0) {
+          const searchTerm = q.trim();
+          // Create a normalized search term that removes + and country code
+          let normalizedSearch = searchTerm;
+          if (searchTerm.startsWith('+61')) {
+            normalizedSearch = searchTerm.substring(3); // Remove +61
+          } else if (searchTerm.startsWith('+')) {
+            normalizedSearch = searchTerm.substring(1); // Remove +
+          }
+          
+          // Search for both the original term and normalized version
+          query = query.or(`from_number.ilike.%${searchTerm}%,to_number.ilike.%${searchTerm}%,from_number.ilike.%${normalizedSearch}%,to_number.ilike.%${normalizedSearch}%`);
+        }
+        const { data, error } = await query;
 
         if (error) {
           console.error('Error fetching calls:', error);
@@ -59,7 +92,44 @@ function CallsContent() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [supabase]);
+  }, [supabase, status, direction, startDate, endDate, q]);
+
+  useEffect(() => {
+    const t = setTimeout(async () => {
+      setLoading(true);
+      try {
+        let query = supabase
+          .from('calls')
+          .select('*')
+          .order('started_at', { ascending: false })
+          .limit(100);
+        if (status !== 'all') query = query.eq('status', status);
+        if (direction !== 'all') query = query.eq('direction', direction);
+        if (startDate) query = query.gte('started_at', new Date(startDate).toISOString());
+        if (endDate) { const end = new Date(endDate); end.setHours(23,59,59,999); query = query.lte('started_at', end.toISOString()); }
+        if (q.trim().length > 0) {
+          const searchTerm = q.trim();
+          // Create a normalized search term that removes + and country code
+          let normalizedSearch = searchTerm;
+          if (searchTerm.startsWith('+61')) {
+            normalizedSearch = searchTerm.substring(3); // Remove +61
+          } else if (searchTerm.startsWith('+')) {
+            normalizedSearch = searchTerm.substring(1); // Remove +
+          }
+          
+          // Search for both the original term and normalized version
+          query = query.or(`from_number.ilike.%${searchTerm}%,to_number.ilike.%${searchTerm}%,from_number.ilike.%${normalizedSearch}%,to_number.ilike.%${normalizedSearch}%`);
+        }
+        const { data, error } = await query;
+        if (!error) setCalls(data || []);
+      } finally {
+        setLoading(false);
+      }
+    }, 250);
+    return () => clearTimeout(t);
+  }, [q, status, direction, startDate, endDate, supabase]);
+
+  const resetFilters = () => { setQ(""); setStatus("all"); setDirection("all"); setStartDate(""); setEndDate(""); };
 
   function formatDuration(seconds: number | null): string {
     if (!seconds) return 'N/A';
@@ -70,25 +140,17 @@ function CallsContent() {
 
   function formatDate(dateString: string | null): string {
     if (!dateString) return 'N/A';
-    return new Date(dateString).toLocaleString();
+    const d = new Date(dateString);
+    return d.toLocaleDateString();
   }
 
-  function getStatusBadge(status: string | null) {
-    if (!status) return <Badge variant="secondary">Unknown</Badge>;
-    
-    switch (status) {
-      case 'in_progress':
-        return <Badge variant="default">In Progress</Badge>;
-      case 'completed':
-        return <Badge variant="secondary">Completed</Badge>;
-      case 'missed':
-        return <Badge variant="outline">Missed</Badge>;
-      case 'failed':
-        return <Badge variant="destructive">Failed</Badge>;
-      default:
-        return <Badge variant="outline">{status}</Badge>;
-    }
+  function formatTime(dateString: string | null): string {
+    if (!dateString) return 'N/A';
+    const d = new Date(dateString);
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
+
+  // removed old badge helper to keep component lean
 
   return (
     <div className="space-y-6">
@@ -99,62 +161,80 @@ function CallsContent() {
         </p>
       </div>
       
-      {loading ? (
-        <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-6">
-          <p className="text-muted-foreground">Loading calls...</p>
+      <div className="space-y-4">
+        <div className="flex flex-wrap gap-3 rounded-lg">
+          <Input placeholder="Search number..." value={q} onChange={(e) => setQ(e.target.value)} className="w-40 md:w-52 border border-white/50" />
+          <Select value={status} onValueChange={setStatus}>
+            <SelectTrigger className="w-36 border-white/50"><SelectValue placeholder="Status" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All statuses</SelectItem>
+              <SelectItem value="in_progress">In progress</SelectItem>
+              <SelectItem value="completed">Completed</SelectItem>
+              <SelectItem value="missed">Missed</SelectItem>
+              <SelectItem value="failed">Failed</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={direction} onValueChange={setDirection}>
+            <SelectTrigger className="w-36 border-white/50"><SelectValue placeholder="Direction" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All directions</SelectItem>
+              <SelectItem value="inbound">Inbound</SelectItem>
+              <SelectItem value="outbound">Outbound</SelectItem>
+            </SelectContent>
+          </Select>
+          <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-40 border border-white/50" />
+          <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-40 border border-white/50" />
+          <Button variant="default" onClick={resetFilters} className="">Reset</Button>
         </div>
-      ) : calls.length === 0 ? (
-        <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-6">
-          <p className="text-muted-foreground">No calls found. Make a call to your Retell number to see data here.</p>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {calls.map((call) => (
-            <Card key={call.id}>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg">Call {call.id.slice(-8)}</CardTitle>
-                  {getStatusBadge(call.status)}
+
+        {loading ? (
+          <div className="bg-card rounded-lg p-6">
+            <p className="text-muted-foreground">Loading calls...</p>
+          </div>
+        ) : calls.length === 0 ? (
+          <div className="bg-card rounded-lg p-6">
+            <p className="text-muted-foreground">
+              {q || status !== 'all' || direction !== 'all' || startDate || endDate 
+                ? 'No calls match your current filters. Try adjusting your search criteria.' 
+                : 'No calls found. Make a call to your Retell number to see data here.'}
+            </p>
+          </div>
+        ) : (
+          <div className="bg-card rounded-lg overflow-hidden">
+            {/* Header Row */}
+            <div className="grid grid-cols-7 bg-muted h-11 items-center">
+              <div className="px-3 font-medium">Session ID</div>
+              <div className="px-3 font-medium">Date</div>
+              <div className="px-3 font-medium">Time</div>
+              <div className="px-3 font-medium">From</div>
+              <div className="px-3 font-medium">Status</div>
+              <div className="px-3 font-medium">Duration</div>
+              <div className="px-3 font-medium">Actions</div>
+            </div>
+            
+            {/* Data Rows */}
+            {calls.map((call) => (
+              <div
+                key={call.id}
+                className="grid grid-cols-7 h-14 cursor-pointer hover:bg-accent/20 border-b bg-[#2a2a2a] items-center"
+                onClick={() => router.push(`/dashboard/calls/${encodeURIComponent(call.id)}`)}
+              >
+                <div className="px-3 font-mono text-xs md:text-sm truncate max-w-[200px]">{call.id}</div>
+                <div className="px-3">{formatDate(call.started_at)}</div>
+                <div className="px-3">{formatTime(call.started_at)}</div>
+                <div className="px-3 truncate max-w-[180px]">{call.from_number || 'N/A'}</div>
+                <div className="px-3 capitalize">{call.status ?? '-'}</div>
+                <div className="px-3">{formatDuration(call.duration_seconds)}</div>
+                <div className="px-3" onClick={(e) => e.stopPropagation()}>
+                  <Link href={`/dashboard/calls/${encodeURIComponent(call.id)}`}>
+                    <Button size="lg" variant="default" className="h-8 rounded-md px-3 cursor-pointer">View details</Button>
+                  </Link>
                 </div>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                  <div>
-                    <span className="font-medium text-muted-foreground">From:</span>
-                    <p>{call.from_number || 'N/A'}</p>
-                  </div>
-                  <div>
-                    <span className="font-medium text-muted-foreground">To:</span>
-                    <p>{call.to_number || 'N/A'}</p>
-                  </div>
-                  <div>
-                    <span className="font-medium text-muted-foreground">Started:</span>
-                    <p>{formatDate(call.started_at)}</p>
-                  </div>
-                  <div>
-                    <span className="font-medium text-muted-foreground">Duration:</span>
-                    <p>{formatDuration(call.duration_seconds)}</p>
-                  </div>
-                </div>
-                
-                {call.summary && (
-                  <div>
-                    <span className="font-medium text-muted-foreground">Summary:</span>
-                    <p className="mt-1">{call.summary}</p>
-                  </div>
-                )}
-                
-                {call.transcript && (
-                  <div>
-                    <span className="font-medium text-muted-foreground">Transcript:</span>
-                    <p className="mt-1 text-sm text-muted-foreground line-clamp-3">{call.transcript}</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

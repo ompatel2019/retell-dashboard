@@ -94,7 +94,7 @@ export async function GET() {
   const kpisToday = sumWindow(todayStart, now);
 
   // Disconnection reasons (last 30d)
-  const { data: reasons, error: reasonsErr } = await supabase.rpc(
+  const { data: reasons } = await supabase.rpc(
     "reasons_breakdown",
     {
       p_business_id: biz.id,

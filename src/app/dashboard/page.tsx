@@ -5,10 +5,22 @@ import { BusinessProviderWrapper } from "@/components/providers/BusinessProvider
 import { useEffect, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 
+interface KPIData {
+  total: number;
+  answerRate: number;
+  avgDuration: number;
+  firstTimeCallers?: number;
+}
+
+interface KPIs {
+  today: KPIData;
+  last7d: KPIData;
+  last30d: KPIData;
+}
+
 function DashboardContent() {
   const [loading, setLoading] = useState(true);
-  const [kpis, setKpis] = useState<{ today: any; last7d: any; last30d: any } | null>(null);
-  const [series, setSeries] = useState<any[]>([]);
+  const [kpis, setKpis] = useState<KPIs | null>(null);
 
   useEffect(() => {
     async function fetchAnalytics() {
@@ -17,7 +29,6 @@ function DashboardContent() {
         if (!res.ok) throw new Error("Failed to load analytics");
         const json = await res.json();
         setKpis(json.kpis);
-        setSeries(json.series);
       } catch (e) {
         console.error(e);
       } finally {

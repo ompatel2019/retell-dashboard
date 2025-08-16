@@ -16,11 +16,31 @@ import {
   Bar,
 } from "recharts";
 
+interface DailyMetrics {
+  d: string;
+  total_calls: number;
+  completed: number;
+  missed: number;
+  failed: number;
+  avg_duration_sec: number;
+}
+
+interface ReasonBreakdown {
+  reason: string;
+  cnt: number;
+}
+
+interface RepeatCaller {
+  from_number: string;
+  calls: number;
+  last_call: string;
+}
+
 function AnalyticsContent() {
   const [loading, setLoading] = useState(true);
-  const [series, setSeries] = useState<any[]>([]);
-  const [reasons, setReasons] = useState<any[]>([]);
-  const [repeatCallers, setRepeatCallers] = useState<any[]>([]);
+  const [series, setSeries] = useState<DailyMetrics[]>([]);
+  const [reasons, setReasons] = useState<ReasonBreakdown[]>([]);
+  const [repeatCallers, setRepeatCallers] = useState<RepeatCaller[]>([]);
 
   useEffect(() => {
     async function fetchAnalytics() {
@@ -41,7 +61,7 @@ function AnalyticsContent() {
   }, []);
 
   const chartData = useMemo(() => {
-    return (series ?? []).map((r: any) => ({
+    return (series ?? []).map((r: DailyMetrics) => ({
       date: r.d,
       total: r.total_calls ?? 0,
       completed: r.completed ?? 0,
@@ -102,7 +122,7 @@ function AnalyticsContent() {
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="date" tick={{ fontSize: 12 }} />
                   <YAxis domain={[0, 1]} tickFormatter={(v) => `${Math.round((v as number) * 100)}%`} tick={{ fontSize: 12 }} />
-                  <Tooltip formatter={(v: any) => `${Math.round(v * 100)}%`} />
+                  <Tooltip formatter={(v: number) => `${Math.round(v * 100)}%`} />
                   <Line type="monotone" dataKey="answerRate" stroke="#10b981" strokeWidth={2} dot={false} name="Answer Rate" />
                 </LineChart>
               </ResponsiveContainer>
@@ -121,7 +141,7 @@ function AnalyticsContent() {
               <p className="text-muted-foreground">Loading...</p>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={reasons.map((r: any) => ({ reason: r.reason ?? "unknown", count: r.cnt }))}>
+                <BarChart data={reasons.map((r: ReasonBreakdown) => ({ reason: r.reason ?? "unknown", count: r.cnt }))}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="reason" tick={{ fontSize: 12 }} interval={0} angle={-25} textAnchor="end" height={60} />
                   <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
@@ -144,7 +164,7 @@ function AnalyticsContent() {
               <p className="text-muted-foreground">No repeat callers in this window.</p>
             ) : (
               <div className="space-y-2">
-                {repeatCallers.map((row: any) => (
+                {repeatCallers.map((row: RepeatCaller) => (
                   <div key={row.from_number} className="flex items-center justify-between text-sm">
                     <div className="font-medium">{row.from_number}</div>
                     <div className="text-muted-foreground">{row.calls} calls</div>
