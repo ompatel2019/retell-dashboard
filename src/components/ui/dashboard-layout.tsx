@@ -3,8 +3,16 @@
 import { useState } from "react";
 import { Sidebar } from "./sidebar";
 import { Header } from "./header";
-import { Button } from "./button";
-import { Menu } from "lucide-react";
+import { Button as SidebarToggleButton } from "./button";
+import { useBusinessContext } from "@/lib/user/BusinessContext";
+import {
+  Dialog,
+  DialogContent,
+  DialogOverlay,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Phone } from "lucide-react";
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -12,6 +20,9 @@ interface DashboardLayoutProps {
 
 export function DashboardLayout({ children }: DashboardLayoutProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const { businessData, loading } = useBusinessContext();
+  const shouldBlock =
+    !loading && (!businessData || businessData.business.paused);
 
   const toggleSidebar = () => {
     setSidebarCollapsed(!sidebarCollapsed);
@@ -19,30 +30,58 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
 
   return (
     <div className="flex h-screen bg-background">
-      <Sidebar 
+      <Sidebar
         className="flex-shrink-0"
         collapsed={sidebarCollapsed}
         onToggle={toggleSidebar}
       />
-      
+
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header />
-        <main className="flex-1 overflow-y-auto p-6">
-          {children}
-        </main>
+        <main className="flex-1 overflow-y-auto p-6">{children}</main>
       </div>
 
-      {/* Hamburger Menu Button when sidebar is collapsed */}
-      {sidebarCollapsed && (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={toggleSidebar}
-          className="fixed top-4 left-4 z-50 h-10 w-10 p-0 bg-background border shadow-lg"
+      {/* Blocking overlay when business is paused or missing */}
+      <Dialog open={shouldBlock}>
+        <DialogOverlay className="bg-black/50 backdrop-blur-[1px]" />
+        <DialogContent
+          showCloseButton={false}
+          className="text-center max-w-lg p-8 md:p-10 rounded-xl"
         >
-          <Menu className="h-5 w-5" />
-        </Button>
-      )}
+          <DialogTitle className="sr-only">Account Status</DialogTitle>
+          <div className="space-y-6">
+            <h2 className="text-2xl md:text-3xl font-semibold">
+              Account requires attention
+            </h2>
+            <div className="text-left mx-auto max-w-3xl">
+              <ul className="list-none space-y-3 text-base md:text-lg text-muted-foreground">
+                <li className="flex items-center">
+                  <span className="mr-3 text-white font-bold text-2xl">•</span>
+                  <span>Your account may be paused by an admin</span>
+                </li>
+                <li className="flex items-center">
+                  <span className="mr-3 text-white font-bold text-2xl">•</span>
+                  <span>Your business may be deleted or not yet created</span>
+                </li>
+                <li className="flex items-center">
+                  <span className="mr-3 text-white font-bold text-2xl">•</span>
+                  <span>
+                    Possible reasons: paused subscription, overdue invoices, or
+                    setup pending
+                  </span>
+                </li>
+              </ul>
+            </div>
+            <div className="pt-2">
+              <a href="tel:+61490536019" className="inline-block">
+                <Button size="lg" className="px-6">
+                  <Phone className="mr-2" /> Call +61 490 536 019
+                </Button>
+              </a>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

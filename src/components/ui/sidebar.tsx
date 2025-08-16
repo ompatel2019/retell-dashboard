@@ -4,16 +4,18 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { 
-  LayoutDashboard, 
-  Phone, 
-  Calendar, 
-  BarChart3, 
-  Settings, 
+import {
+  LayoutDashboard,
+  Phone,
+  Calendar,
+  BarChart3,
+  Settings,
   ChevronLeft,
   Menu,
   User,
-  Plug
+  Plug,
+  PanelRightClose,
+  PanelRightOpen,
 } from "lucide-react";
 
 interface SidebarProps {
@@ -59,44 +61,58 @@ export function Sidebar({ className, collapsed, onToggle }: SidebarProps) {
   const pathname = usePathname();
 
   return (
-    <div className={cn(
-      "flex flex-col border-r bg-background transition-all duration-300 ease-in-out",
-      collapsed ? "w-16" : "w-64",
-      className
-    )}>
-      <div className="flex h-16 items-center justify-between px-4 border-b">
-        <h1 className={cn(
-          "font-semibold transition-all duration-200",
-          collapsed ? "hidden" : "block"
-        )}>
+    <div
+      className={cn(
+        "flex flex-col border-r bg-background transition-all duration-300 ease-in-out",
+        collapsed ? "w-16" : "w-64",
+        className
+      )}
+    >
+      <div className="flex h-16 items-center justify-between p-4 border-b">
+        <h1
+          className={cn(
+            "font-semibold transition-all duration-200",
+            collapsed ? "hidden" : "block"
+          )}
+        >
           Byt.
         </h1>
-        <Button
-          variant="ghost"
-          size="sm"
+
+        {/* Toggle Button - positioned in top-right of sidebar */}
+        <button
           onClick={onToggle}
-          className="h-8 w-8 p-0"
+          className="h-6 w-6 rounded-md text-white hover:text-white hover:bg-accent transition-all duration-200 flex items-center justify-center shrink-0"
         >
-          {collapsed ? <Menu className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-        </Button>
+          {collapsed ? (
+            <PanelRightClose className="h-5 w-5" />
+          ) : (
+            <PanelRightOpen className="h-5 w-5" />
+          )}
+        </button>
       </div>
-      
-      <nav className="flex-1 space-y-1 p-2">
-        {navigation.map((item) => {
+
+      <nav className="flex-1 space-y-2 p-2">
+        {navigation.map((item, index) => {
           const isActive = pathname === item.href;
           return (
-            <Link
-              key={item.name}
-              href={item.href}
-              className={cn(
-                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground",
-                isActive ? "bg-accent text-accent-foreground" : "text-muted-foreground",
-                collapsed && "justify-center px-2"
+            <div key={item.name}>
+              <Link
+                href={item.href}
+                className={cn(
+                  "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground",
+                  isActive
+                    ? "bg-accent text-accent-foreground"
+                    : "text-muted-foreground",
+                  collapsed && "justify-center px-2"
+                )}
+              >
+                <item.icon className="h-5 w-5" />
+                {!collapsed && <span>{item.name}</span>}
+              </Link>
+              {index < navigation.length - 1 && collapsed && (
+                <div className="border-b-2 border-border mx-3 my-2" />
               )}
-            >
-              <item.icon className="h-4 w-4" />
-              {!collapsed && <span>{item.name}</span>}
-            </Link>
+            </div>
           );
         })}
       </nav>
@@ -110,7 +126,7 @@ export function Sidebar({ className, collapsed, onToggle }: SidebarProps) {
             collapsed && "justify-center px-2"
           )}
         >
-          <User className="h-4 w-4" />
+          <User className="h-5 w-5" />
           {!collapsed && <span>Profile</span>}
         </Link>
       </div>

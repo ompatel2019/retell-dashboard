@@ -25,6 +25,9 @@ Create a `.env.local` file in the root directory:
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+RETELL_WEBHOOK_SECRET=your_retell_webhook_hmac_secret
+TOOLS_BEARER_TOKEN=your_internal_tools_bearer
 ```
 
 ### Installation
@@ -55,9 +58,19 @@ The application requires the following database tables to be created:
 - `phone_numbers` - Business phone lines
 
 Run the SQL files in `supabase/migrations/` in order:
-1. `01_schema.sql` - Creates tables
-2. `02_policies.sql` - Sets up Row Level Security
-3. `03_seed_example.sql` - Optional example data
+1. `01_schema.sql` - Core tenant tables
+2. `02_policies.sql` - Row Level Security
+3. `03_pause_tenant.sql` - Pause controls and RLS updates
+4. `04_calls_and_bookings.sql` - Calls, events, contacts, bookings
+
+### API Endpoints
+
+- `POST /api/retell/webhook` – Retell call events (HMAC via `RETELL_WEBHOOK_SECRET`)
+- `POST /api/tools/list-availability` – Returns candidate slots (Bearer `TOOLS_BEARER_TOKEN`)
+- `POST /api/tools/create-job` – Upserts contact and logs `job_created`
+- `POST /api/tools/create-booking` – Inserts booking and logs `booking_created`
+- `POST /api/tools/send-confirmation` – Stub SMS/email sender
+- `POST /api/tools/dynamic-variables` – Optional variables provider
 
 ## Troubleshooting
 
