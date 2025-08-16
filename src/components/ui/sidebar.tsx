@@ -81,9 +81,9 @@ export function Sidebar({ className, collapsed, onToggle }: SidebarProps) {
           className="h-6 w-6 rounded-md text-white hover:text-white hover:bg-accent transition-all duration-200 flex items-center justify-center shrink-0"
         >
           {collapsed ? (
-            <PanelRightClose className="h-5 w-5" />
+            <PanelRightClose className="size-4" />
           ) : (
-            <PanelRightOpen className="h-5 w-5" />
+            <PanelRightOpen className="size-4" />
           )}
         </button>
       </div>
@@ -103,11 +103,11 @@ export function Sidebar({ className, collapsed, onToggle }: SidebarProps) {
                   collapsed && "justify-center px-2"
                 )}
               >
-                <item.icon className="h-5 w-5" />
+                <item.icon className="size-4" />
                 {!collapsed && <span>{item.name}</span>}
               </Link>
               {index < navigation.length - 1 && collapsed && (
-                <div className="border-b-2 border-border mx-3 my-2" />
+                <div className="mx-3 my-2" />
               )}
             </div>
           );
@@ -123,7 +123,7 @@ export function Sidebar({ className, collapsed, onToggle }: SidebarProps) {
             collapsed && "justify-center px-2"
           )}
         >
-          <User className="h-5 w-5" />
+          <User className="size-4" />
           {!collapsed && <span>Profile</span>}
         </Link>
       </div>

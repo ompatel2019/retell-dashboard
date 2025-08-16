@@ -7,12 +7,12 @@ import { DashboardLayout } from "@/components/ui/dashboard-layout";
 import { BusinessProviderWrapper } from "@/components/providers/BusinessProviderWrapper";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
 import { ChevronLeft } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 type CallRow = {
   id: string;
+  business_id: string;
   from_number: string | null;
   to_number: string | null;
   started_at: string | null;
@@ -26,6 +26,20 @@ type CallRow = {
   disconnection_reason: string | null;
   dynamic_variables?: Record<string, unknown> | null;
 };
+
+// Safe helpers for nested unknown JSON
+function isRecordLike(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function getStringAtPath(obj: unknown, path: string[]): string | undefined {
+  let current: unknown = obj;
+  for (const key of path) {
+    if (!isRecordLike(current)) return undefined;
+    current = current[key];
+  }
+  return typeof current === "string" ? current : undefined;
+}
 
 function formatDuration(seconds: number | null): string {
   if (!seconds) return "N/A";
@@ -45,18 +59,27 @@ function formatTimecode(totalSeconds: number): string {
   return `[${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}]`;
 }
 
-function normalizeTranscriptItems(transcriptJson: Record<string, unknown> | unknown[] | null): Array<{ speaker: string; text: string; seconds: number }>
-{
+function normalizeTranscriptItems(
+  transcriptJson: Record<string, unknown> | unknown[] | null
+): Array<{ speaker: string; text: string; seconds: number }> {
   if (!transcriptJson) return [];
   // Helpers to safely access unknown shapes
-  const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+  const isRecord = (v: unknown): v is Record<string, unknown> =>
+    typeof v === "object" && v !== null && !Array.isArray(v);
   const isArray = (v: unknown): v is unknown[] => Array.isArray(v);
-  const getString = (o: Record<string, unknown>, k: string) => (typeof o[k] === "string" ? (o[k] as string) : undefined);
-  const getNumber = (o: Record<string, unknown>, k: string) => (typeof o[k] === "number" ? (o[k] as number) : undefined);
-  const getArray = (o: Record<string, unknown>, k: string) => (Array.isArray(o[k]) ? (o[k] as unknown[]) : undefined);
+  const getString = (o: Record<string, unknown>, k: string) =>
+    typeof o[k] === "string" ? (o[k] as string) : undefined;
+  const getNumber = (o: Record<string, unknown>, k: string) =>
+    typeof o[k] === "number" ? (o[k] as number) : undefined;
+  const getArray = (o: Record<string, unknown>, k: string) =>
+    Array.isArray(o[k]) ? (o[k] as unknown[]) : undefined;
 
   const items: Array<{ speaker: string; text: string; seconds: number }> = [];
-  const pushItem = (speaker: string, text: string, seconds: number | null | undefined) => {
+  const pushItem = (
+    speaker: string,
+    text: string,
+    seconds: number | null | undefined
+  ) => {
     const s = typeof seconds === "number" && seconds >= 0 ? seconds : 0;
     items.push({ speaker, text, seconds: s });
   };
@@ -64,10 +87,18 @@ function normalizeTranscriptItems(transcriptJson: Record<string, unknown> | unkn
   if (isArray(transcriptJson)) {
     for (const node of transcriptJson) {
       if (!isRecord(node)) continue;
-      const speaker = getString(node, "role") ?? getString(node, "speaker") ?? "unknown";
-      const text = getString(node, "text") ?? getString(node, "content") ?? getString(node, "message") ?? "";
+      const speaker =
+        getString(node, "role") ?? getString(node, "speaker") ?? "unknown";
+      const text =
+        getString(node, "text") ??
+        getString(node, "content") ??
+        getString(node, "message") ??
+        "";
       const seconds = (() => {
-        const s = getNumber(node, "start") ?? getNumber(node, "timestamp") ?? getNumber(node, "time");
+        const s =
+          getNumber(node, "start") ??
+          getNumber(node, "timestamp") ??
+          getNumber(node, "time");
         return typeof s === "number" ? Math.round(s) : 0;
       })();
       if (text) pushItem(speaker, text, seconds);
@@ -76,7 +107,9 @@ function normalizeTranscriptItems(transcriptJson: Record<string, unknown> | unkn
         if (isRecord(t)) {
           const name = getString(t, "name");
           const args = isRecord(t["arguments"]) ? t["arguments"] : undefined;
-          const tText = name ? `${name}(${JSON.stringify(args ?? {})})` : JSON.stringify(t);
+          const tText = name
+            ? `${name}(${JSON.stringify(args ?? {})})`
+            : JSON.stringify(t);
           pushItem("tool", tText, seconds);
         }
       }
@@ -84,7 +117,8 @@ function normalizeTranscriptItems(transcriptJson: Record<string, unknown> | unkn
   } else if (isRecord(transcriptJson) && isArray(transcriptJson.segments)) {
     for (const seg of transcriptJson.segments) {
       if (!isRecord(seg)) continue;
-      const speaker = getString(seg, "speaker") ?? getString(seg, "role") ?? "unknown";
+      const speaker =
+        getString(seg, "speaker") ?? getString(seg, "role") ?? "unknown";
       const text = getString(seg, "text") ?? getString(seg, "content") ?? "";
       const seconds = (() => {
         const s = getNumber(seg, "start");
@@ -102,20 +136,61 @@ function CallDetailInner() {
   const supabase = createClient();
   const [call, setCall] = useState<CallRow | null>(null);
   const [loading, setLoading] = useState(true);
+  const [summaryText, setSummaryText] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
       if (!params?.id) return;
       try {
-        const { data, error } = await supabase
+        // Fetch call data
+        const { data: callData, error: callError } = await supabase
           .from("calls")
-          .select("id, from_number, to_number, started_at, ended_at, duration_seconds, status, summary, transcript, transcript_json, audio_url, disconnection_reason, dynamic_variables")
+          .select(
+            "id, business_id, from_number, to_number, started_at, ended_at, duration_seconds, status, summary, transcript, transcript_json, audio_url, disconnection_reason, dynamic_variables"
+          )
           .eq("id", params.id)
           .maybeSingle();
-        if (error) throw error;
-        setCall(data as CallRow);
+
+        if (callError) throw callError;
+        setCall(callData as CallRow);
+        setSummaryText((callData as CallRow | null)?.summary ?? null);
+
+        // Fetch call analysis data from call_events
+        if (callData) {
+          const { data: analysisData, error: analysisError } = await supabase
+            .from("call_events")
+            .select("data")
+            .eq("call_id", params.id)
+            .eq("type", "call_analyzed")
+            .eq("business_id", callData.business_id)
+            .order("occurred_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (!analysisError && analysisData && analysisData.data) {
+            const raw = analysisData.data as Record<string, unknown>;
+            console.log("Call analysis data:", raw);
+            // Common shapes observed from providers/tests
+            const nestedSummary =
+              getStringAtPath(raw, ["call", "call_analysis", "call_summary"]) ??
+              getStringAtPath(raw, ["call", "call_analysis", "summary"]) ??
+              getStringAtPath(raw, ["call_analysis", "call_summary"]) ??
+              getStringAtPath(raw, ["call_summary"]) ??
+              getStringAtPath(raw, ["summary"]) ??
+              null;
+            if (
+              nestedSummary &&
+              typeof nestedSummary === "string" &&
+              nestedSummary.trim().length > 0
+            ) {
+              setSummaryText(nestedSummary);
+            }
+          } else {
+            console.log("No analysis data found or error:", analysisError);
+          }
+        }
       } catch (e) {
-        console.error(e);
+        console.error("Error loading call data:", e);
       } finally {
         setLoading(false);
       }
@@ -123,7 +198,10 @@ function CallDetailInner() {
     load();
   }, [params?.id, supabase]);
 
-  const transcriptItems = useMemo(() => normalizeTranscriptItems(call?.transcript_json ?? null), [call?.transcript_json]);
+  const transcriptItems = useMemo(
+    () => normalizeTranscriptItems(call?.transcript_json ?? null),
+    [call?.transcript_json]
+  );
 
   if (loading) {
     return (
@@ -145,10 +223,9 @@ function CallDetailInner() {
     <div className="space-y-6">
       <div>
         <Link href="/dashboard/calls">
-          <Button variant="outline" size="sm" className="gap-1 hover:translate-x-[-2px] transition-transform">
-            <ChevronLeft className="h-4 w-4" />
-            Back to calls
-          </Button>
+          <button className="inline-flex items-center justify-center h-8 w-8 rounded-md text-sm font-medium border border-input bg-background shadow-xs hover:underline hover:cursor-pointer transition-all duration-200">
+            <ChevronLeft className="size-4" />
+          </button>
         </Link>
       </div>
       <Card>
@@ -170,11 +247,15 @@ function CallDetailInner() {
           </div>
           <div>
             <div className="text-muted-foreground">Duration</div>
-            <div className="font-medium">{formatDuration(call.duration_seconds)}</div>
+            <div className="font-medium">
+              {formatDuration(call.duration_seconds)}
+            </div>
           </div>
           <div>
             <div className="text-muted-foreground">End Reason</div>
-            <div className="font-medium">{call.disconnection_reason ?? "unknown"}</div>
+            <div className="font-medium">
+              {call.disconnection_reason ?? "unknown"}
+            </div>
           </div>
           <div>
             <div className="text-muted-foreground">Status</div>
@@ -197,7 +278,13 @@ function CallDetailInner() {
               <CardTitle>AI Summary</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="whitespace-pre-wrap text-sm">{call.summary ?? "No summary."}</p>
+              {summaryText && summaryText.trim().length > 0 ? (
+                <p className="whitespace-pre-wrap text-sm">{summaryText}</p>
+              ) : (
+                <p className="text-muted-foreground">
+                  No call summary available from analysis.
+                </p>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -209,15 +296,32 @@ function CallDetailInner() {
             </CardHeader>
             <CardContent>
               {transcriptItems.length === 0 ? (
-                <p className="text-muted-foreground">No structured transcript available.</p>
+                <p className="text-muted-foreground">
+                  No structured transcript available.
+                </p>
               ) : (
                 <div className="space-y-3">
                   {transcriptItems.map((msg, idx) => (
-                    <div key={idx} className={`flex ${msg.speaker === "agent" ? "justify-end" : "justify-start"}`}>
-                      <div className={`max-w-[85%] rounded-lg border p-3 text-sm ${msg.speaker === "agent" ? "bg-secondary" : "bg-card"}`}>
+                    <div
+                      key={idx}
+                      className={`flex ${
+                        msg.speaker === "agent"
+                          ? "justify-end"
+                          : "justify-start"
+                      }`}
+                    >
+                      <div
+                        className={`max-w-[85%] rounded-lg border p-3 text-sm ${
+                          msg.speaker === "agent" ? "bg-secondary" : "bg-card"
+                        }`}
+                      >
                         <div className="flex items-center gap-2 mb-1 text-muted-foreground">
-                          <span className="uppercase tracking-wide text-xs">{msg.speaker}</span>
-                          <span className="text-xs">{formatTimecode(msg.seconds)}</span>
+                          <span className="uppercase tracking-wide text-xs">
+                            {msg.speaker}
+                          </span>
+                          <span className="text-xs">
+                            {formatTimecode(msg.seconds)}
+                          </span>
                         </div>
                         <div className="whitespace-pre-wrap">{msg.text}</div>
                       </div>
@@ -238,7 +342,9 @@ function CallDetailInner() {
               {call.audio_url ? (
                 <audio controls src={call.audio_url} className="w-full" />
               ) : (
-                <p className="text-muted-foreground">No audio recording available.</p>
+                <p className="text-muted-foreground">
+                  No audio recording available.
+                </p>
               )}
             </CardContent>
           </Card>
@@ -250,17 +356,25 @@ function CallDetailInner() {
               <CardTitle>Caller Information</CardTitle>
             </CardHeader>
             <CardContent>
-              {call.dynamic_variables && Object.keys(call.dynamic_variables).length > 0 ? (
+              {call.dynamic_variables &&
+              Object.keys(call.dynamic_variables).length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                   {Object.entries(call.dynamic_variables).map(([key, val]) => (
-                    <div key={key} className="flex items-center justify-between gap-3">
+                    <div
+                      key={key}
+                      className="flex items-center justify-between gap-3"
+                    >
                       <div className="text-muted-foreground">{key}</div>
-                      <div className="font-medium break-all">{typeof val === 'string' ? val : JSON.stringify(val)}</div>
+                      <div className="font-medium break-all">
+                        {typeof val === "string" ? val : JSON.stringify(val)}
+                      </div>
                     </div>
                   ))}
                 </div>
               ) : (
-                <p className="text-muted-foreground">No caller info captured.</p>
+                <p className="text-muted-foreground">
+                  No caller info captured.
+                </p>
               )}
             </CardContent>
           </Card>
@@ -279,5 +393,3 @@ export default function CallDetailPage() {
     </BusinessProviderWrapper>
   );
 }
-
-
