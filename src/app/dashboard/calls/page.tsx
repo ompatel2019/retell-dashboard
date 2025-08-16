@@ -77,10 +77,14 @@ function CallsContent() {
     if (!status) return <Badge variant="secondary">Unknown</Badge>;
     
     switch (status) {
-      case 'active':
-        return <Badge variant="default">Active</Badge>;
-      case 'ended':
-        return <Badge variant="secondary">Ended</Badge>;
+      case 'in_progress':
+        return <Badge variant="default">In Progress</Badge>;
+      case 'completed':
+        return <Badge variant="secondary">Completed</Badge>;
+      case 'missed':
+        return <Badge variant="outline">Missed</Badge>;
+      case 'failed':
+        return <Badge variant="destructive">Failed</Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
