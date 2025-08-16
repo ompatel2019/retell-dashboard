@@ -15,6 +15,7 @@ type CallRow = {
   business_id: string;
   from_number: string | null;
   to_number: string | null;
+  direction?: string | null;
   started_at: string | null;
   ended_at: string | null;
   duration_seconds: number | null;
@@ -39,6 +40,27 @@ function getStringAtPath(obj: unknown, path: string[]): string | undefined {
     current = current[key];
   }
   return typeof current === "string" ? current : undefined;
+}
+
+function getBooleanAtPath(obj: unknown, path: string[]): boolean | undefined {
+  let current: unknown = obj;
+  for (const key of path) {
+    if (!isRecordLike(current)) return undefined;
+    current = current[key];
+  }
+  return typeof current === "boolean" ? current : undefined;
+}
+
+function getRecordAtPath(
+  obj: unknown,
+  path: string[]
+): Record<string, unknown> | undefined {
+  let current: unknown = obj;
+  for (const key of path) {
+    if (!isRecordLike(current)) return undefined;
+    current = current[key];
+  }
+  return isRecordLike(current) ? (current as Record<string, unknown>) : undefined;
 }
 
 function formatDuration(seconds: number | null): string {
@@ -137,6 +159,15 @@ function CallDetailInner() {
   const [call, setCall] = useState<CallRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [summaryText, setSummaryText] = useState<string | null>(null);
+  const [analysisInfo, setAnalysisInfo] = useState<{
+    in_voicemail?: boolean;
+    user_sentiment?: string;
+    call_successful?: boolean;
+    custom_analysis_data?: Record<string, unknown> | null;
+  } | null>(null);
+  const [events, setEvents] = useState<
+    Array<{ type: string; occurred_at: string; data: Record<string, unknown> | null }>
+  >();
 
   useEffect(() => {
     async function load() {
@@ -146,7 +177,7 @@ function CallDetailInner() {
         const { data: callData, error: callError } = await supabase
           .from("calls")
           .select(
-            "id, business_id, from_number, to_number, started_at, ended_at, duration_seconds, status, summary, transcript, transcript_json, audio_url, disconnection_reason, dynamic_variables"
+            "id, business_id, from_number, to_number, direction, started_at, ended_at, duration_seconds, status, summary, transcript, transcript_json, audio_url, disconnection_reason, dynamic_variables"
           )
           .eq("id", params.id)
           .maybeSingle();
@@ -185,9 +216,41 @@ function CallDetailInner() {
             ) {
               setSummaryText(nestedSummary);
             }
+
+            const analysisRoot =
+              getRecordAtPath(raw, ["call", "call_analysis"]) ??
+              getRecordAtPath(raw, ["call_analysis"]);
+            if (analysisRoot) {
+              setAnalysisInfo({
+                in_voicemail: getBooleanAtPath(analysisRoot, ["in_voicemail"]),
+                user_sentiment: getStringAtPath(analysisRoot, ["user_sentiment"]),
+                call_successful: getBooleanAtPath(analysisRoot, ["call_successful"]),
+                custom_analysis_data:
+                  getRecordAtPath(analysisRoot, ["custom_analysis_data"]) ?? null,
+              });
+            }
           } else {
             console.log("No analysis data found or error:", analysisError);
           }
+
+          // Fetch full event timeline
+          const { data: evts } = await supabase
+            .from("call_events")
+            .select("type, occurred_at, data")
+            .eq("call_id", params.id)
+            .eq("business_id", callData.business_id)
+            .order("occurred_at", { ascending: true })
+            .limit(100);
+          setEvents(
+            (evts ?? []).map((e: { type: unknown; occurred_at: unknown; data: unknown }) => ({
+              type: String(e.type ?? ""),
+              occurred_at: String(e.occurred_at ?? ""),
+              data:
+                (typeof e.data === "object" && e.data !== null && !Array.isArray(e.data)
+                  ? (e.data as Record<string, unknown>)
+                  : null) ?? null,
+            }))
+          );
         }
       } catch (e) {
         console.error("Error loading call data:", e);
@@ -242,6 +305,10 @@ function CallDetailInner() {
             <div className="font-medium">{call.to_number ?? "N/A"}</div>
           </div>
           <div>
+            <div className="text-muted-foreground">Direction</div>
+            <div className="font-medium">{call.direction ?? "unknown"}</div>
+          </div>
+          <div>
             <div className="text-muted-foreground">Started</div>
             <div className="font-medium">{formatDate(call.started_at)}</div>
           </div>
@@ -270,6 +337,7 @@ function CallDetailInner() {
           <TabsTrigger value="transcript">Transcript</TabsTrigger>
           <TabsTrigger value="audio">Audio</TabsTrigger>
           <TabsTrigger value="caller">Caller Information</TabsTrigger>
+          <TabsTrigger value="events">Events</TabsTrigger>
         </TabsList>
 
         <TabsContent value="summary">
@@ -284,6 +352,56 @@ function CallDetailInner() {
                 <p className="text-muted-foreground">
                   No call summary available from analysis.
                 </p>
+              )}
+              {analysisInfo && (
+                <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                  {typeof analysisInfo.in_voicemail === "boolean" && (
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-muted-foreground">In Voicemail</div>
+                      <div className="font-medium">
+                        {analysisInfo.in_voicemail ? "Yes" : "No"}
+                      </div>
+                    </div>
+                  )}
+                  {typeof analysisInfo.call_successful === "boolean" && (
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-muted-foreground">Call Successful</div>
+                      <div className="font-medium">
+                        {analysisInfo.call_successful ? "Yes" : "No"}
+                      </div>
+                    </div>
+                  )}
+                  {analysisInfo.user_sentiment && (
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-muted-foreground">User Sentiment</div>
+                      <div className="font-medium">
+                        {analysisInfo.user_sentiment}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="events">
+          <Card>
+            <CardHeader>
+              <CardTitle>Event Timeline</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {!events || events.length === 0 ? (
+                <p className="text-muted-foreground">No events found.</p>
+              ) : (
+                <div className="space-y-2 text-sm">
+                  {events.map((e, i) => (
+                    <div key={`${e.type}-${i}`} className="flex items-center justify-between">
+                      <div className="capitalize">{e.type.replaceAll("_", " ")}</div>
+                      <div className="text-muted-foreground">{new Date(e.occurred_at).toLocaleString()}</div>
+                    </div>
+                  ))}
+                </div>
               )}
             </CardContent>
           </Card>

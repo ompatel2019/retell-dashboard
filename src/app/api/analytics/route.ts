@@ -114,6 +114,32 @@ export async function GET() {
     }
   );
 
+  // Directions breakdown (last 30d)
+  const { data: directions } = await supabase
+    .from("calls")
+    .select("direction")
+    .eq("business_id", biz.id)
+    .gte("started_at", thirtyDaysAgo.toISOString())
+    .lt("started_at", now.toISOString());
+
+  const directionCounts = (directions ?? []).reduce((acc: Record<string, number>, row: { direction: string | null }) => {
+    const key = (row.direction ?? "unknown").toLowerCase();
+    acc[key] = (acc[key] ?? 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+
+  // Totals for status distribution in last 30d from daily rows
+  const totals30 = (daily ?? []).reduce(
+    (acc, r: { total_calls?: number; completed?: number; missed?: number; failed?: number }) => {
+      acc.total += r.total_calls ?? 0;
+      acc.completed += r.completed ?? 0;
+      acc.missed += r.missed ?? 0;
+      acc.failed += r.failed ?? 0;
+      return acc;
+    },
+    { total: 0, completed: 0, missed: 0, failed: 0 }
+  );
+
   return NextResponse.json({
     kpis: {
       today: { total: kpisToday.total, answerRate: kpisToday.answerRate, avgDuration: kpisToday.avgDuration },
@@ -123,6 +149,8 @@ export async function GET() {
     series: daily ?? [],
     reasons: reasons ?? [],
     repeatCallers: repeatErr ? [] : repeatCallers ?? [],
+    directions: Object.entries(directionCounts).map(([direction, cnt]) => ({ direction, cnt })),
+    totals30,
   });
 }
 
