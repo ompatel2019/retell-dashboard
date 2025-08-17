@@ -81,7 +81,7 @@ export function Sidebar({ className, collapsed, onToggle }: SidebarProps) {
         {/* Toggle Button - positioned in top-right of sidebar */}
         <button
           onClick={onToggle}
-          className="h-6 w-6 rounded-md text-white hover:text-white hover:bg-accent transition-all duration-200 flex items-center justify-center shrink-0"
+          className="h-6 w-6 rounded-md text-foreground hover:text-foreground hover:bg-accent transition-all duration-200 flex items-center justify-center shrink-0"
         >
           {collapsed ? (
             <PanelRightClose className="size-4" />

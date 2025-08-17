@@ -49,31 +49,19 @@ function DashboardContent() {
             : selectedPeriod === "Today"
             ? "today"
             : selectedPeriod;
-        const res = await fetch(`/api/analytics?period=${periodParam}`, {
-          cache: "no-store",
-        });
-        if (!res.ok) throw new Error("Failed to load analytics");
-        const json = await res.json();
-        setKpis(json.kpis);
+        const [kpiRes, recentRes] = await Promise.all([
+          fetch(`/api/analytics?period=${periodParam}`),
+          fetch("/api/analytics?recent=1"),
+        ]);
 
-        // mini-CRM: 5 most recent calls
-        const callsRes = await fetch("/api/analytics?recent=1", {
-          cache: "no-store",
-        });
-        if (callsRes.ok) {
-          try {
-            const client = await (
-              await import("@/lib/supabase/client")
-            ).createClient();
-            const { data } = await client
-              .from("calls")
-              .select(
-                "id, started_at, from_number, to_number, direction, status, duration_seconds"
-              )
-              .order("started_at", { ascending: false })
-              .limit(5);
-            setRecent((data as unknown as RecentCall[]) ?? []);
-          } catch {}
+        if (kpiRes.ok) {
+          const json = await kpiRes.json();
+          setKpis(json.kpis);
+        }
+
+        if (recentRes.ok) {
+          const json = await recentRes.json();
+          setRecent((json.recent as RecentCall[]) ?? []);
         }
       } catch (e) {
         console.error(e);
@@ -97,9 +85,7 @@ function DashboardContent() {
               : selectedPeriod === "Today"
               ? "today"
               : selectedPeriod;
-          const res = await fetch(`/api/analytics?period=${periodParam}`, {
-            cache: "no-store",
-          });
+          const res = await fetch(`/api/analytics?period=${periodParam}`);
           if (!res.ok) throw new Error("Failed to load analytics");
           const json = await res.json();
           setKpis(json.kpis);

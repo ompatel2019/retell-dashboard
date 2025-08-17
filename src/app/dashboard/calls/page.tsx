@@ -280,7 +280,7 @@ function CallsContent() {
             {calls.map((call) => (
               <div
                 key={call.id}
-                className="font-mono grid grid-cols-8 h-12 border-b bg-[#2a2a2a] items-center"
+                className="font-mono grid grid-cols-8 h-12 border-b bg-card items-center"
               >
                 <div className="px-3 font-mono text-xs md:text-sm truncate max-w-[200px]">
                   {call.id}

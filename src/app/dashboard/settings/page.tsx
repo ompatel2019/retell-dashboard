@@ -4,9 +4,20 @@ import { DashboardLayout } from "@/components/ui/dashboard-layout";
 import { BusinessProviderWrapper } from "@/components/providers/BusinessProviderWrapper";
 import { ThemeSelector } from "@/components/ui/theme-selector";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Settings as SettingsIcon, Palette, Bell, Shield } from "lucide-react";
+import { LogOut, Palette } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { createClient } from "@/lib/supabase/client";
+import { useRouter } from "next/navigation";
 
 function SettingsContent() {
+  const supabase = createClient();
+  const router = useRouter();
+
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    router.replace("/login");
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -36,51 +47,19 @@ function SettingsContent() {
           </CardContent>
         </Card>
 
-        {/* Notifications */}
+        {/* Logout */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Bell className="h-5 w-5" />
-              Notifications
+              <LogOut className="h-5 w-5" />
+              Log out
             </CardTitle>
-            <CardDescription>Manage your notification preferences</CardDescription>
+            <CardDescription>Sign out of your account</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Notification settings coming soon...
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* Security */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Shield className="h-5 w-5" />
-              Security
-            </CardTitle>
-            <CardDescription>Manage your account security</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Security settings coming soon...
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* General Settings */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <SettingsIcon className="h-5 w-5" />
-              General
-            </CardTitle>
-            <CardDescription>General dashboard settings</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              General settings coming soon...
-            </p>
+            <Button variant="default" onClick={handleLogout} className="bg-red-500 hover:bg-red-700 cursor-pointer text-white">
+              Log out
+            </Button>
           </CardContent>
         </Card>
       </div>

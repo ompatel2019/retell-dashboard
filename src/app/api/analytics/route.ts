@@ -4,8 +4,9 @@ import { createClient } from "@/lib/supabase/server";
 // Example API returning tenant-scoped analytics via RLS
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const period = searchParams.get('period') || '7d';
-  
+  const period = searchParams.get('period') || undefined; // undefined means analytics page (no KPIs-only mode)
+  const wantRecent = searchParams.get('recent') === '1';
+
   const supabase = await createClient();
 
   const { data: userData } = await supabase.auth.getUser();
@@ -28,53 +29,106 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Account paused" }, { status: 403 });
   }
 
-  // Date windows based on selected period
+  // Date windows
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
   const now = new Date();
 
-  let periodStart: Date;
-  switch (period) {
-    case 'today':
-      periodStart = new Date(now);
-      periodStart.setHours(0, 0, 0, 0);
-      break;
-    case '24h':
-      periodStart = new Date(now);
-      periodStart.setHours(now.getHours() - 24);
-      break;
-    case '7d':
-      periodStart = new Date(now);
-      periodStart.setDate(now.getDate() - 7);
-      break;
-    case '14d':
-      periodStart = new Date(now);
-      periodStart.setDate(now.getDate() - 14);
-      break;
-    case '30d':
-      periodStart = new Date(now);
-      periodStart.setDate(now.getDate() - 30);
-      break;
-    case 'all':
-      periodStart = new Date(0); // Beginning of time
-      break;
-    default:
-      periodStart = new Date(now);
-      periodStart.setDate(now.getDate() - 7);
-  }
+  const computePeriodStart = (p: string | undefined) => {
+    const base = new Date(now);
+    switch (p) {
+      case 'today': {
+        base.setHours(0, 0, 0, 0);
+        return base;
+      }
+      case '24h': {
+        base.setHours(base.getHours() - 24);
+        return base;
+      }
+      case '7d': {
+        base.setDate(base.getDate() - 7);
+        return base;
+      }
+      case '14d': {
+        base.setDate(base.getDate() - 14);
+        return base;
+      }
+      case '30d': {
+        base.setDate(base.getDate() - 30);
+        return base;
+      }
+      case 'all':
+        return new Date(0);
+      default: {
+        // default 7d if period mode is requested without a recognized value
+        base.setDate(base.getDate() - 7);
+        return base;
+      }
+    }
+  };
 
+  const periodStart = period ? computePeriodStart(period) : undefined;
   const sevenDaysAgo = new Date(now);
   sevenDaysAgo.setDate(now.getDate() - 7);
   const thirtyDaysAgo = new Date(now);
   thirtyDaysAgo.setDate(now.getDate() - 30);
 
-  // 1) Daily metrics for last 30 days
-  const { data: daily, error: dailyErr } = await supabase
-    .from("v_call_metrics_daily")
+  // Helper to load recent calls (optional)
+  const recentPromise = wantRecent
+    ? supabase
+        .from("calls")
+        .select(
+          "id, started_at, from_number, to_number, direction, status, duration_seconds"
+        )
+        .eq("business_id", biz.id)
+        .order("started_at", { ascending: false })
+        .limit(5)
+    : Promise.resolve({ data: undefined, error: null } as const);
+
+  // If this request is specifically for KPI/period data, we can skip other heavy computations.
+  // If there is no period param (analytics page), we compute series + reasons + repeat callers.
+
+  // 1) Daily metrics for last 30 days (used for charts and KPI aggregations)
+  // Prefer MV if present, fallback to view
+  const dailyMv = await supabase
+    .from("mv_call_metrics_daily")
     .select("d, total_calls, completed, missed, failed, avg_duration_sec")
     .eq("business_id", biz.id)
     .gte("d", thirtyDaysAgo.toISOString().slice(0, 10))
     .order("d", { ascending: true });
+  const dailyPromise = dailyMv.error
+    ? supabase
+        .from("v_call_metrics_daily")
+        .select("d, total_calls, completed, missed, failed, avg_duration_sec")
+        .eq("business_id", biz.id)
+        .gte("d", thirtyDaysAgo.toISOString().slice(0, 10))
+        .order("d", { ascending: true })
+    : Promise.resolve(dailyMv);
+
+  // 2) Reasons + Repeat callers (only needed when no explicit KPI period is requested)
+  const reasonsPromise = !period
+    ? supabase.rpc("reasons_breakdown", {
+        p_business_id: biz.id,
+        p_start: thirtyDaysAgo.toISOString(),
+        p_end: now.toISOString(),
+      })
+    : Promise.resolve({ data: undefined, error: null } as const);
+
+  const repeatPromise = !period
+    ? supabase.rpc("repeat_callers", {
+        p_business_id: biz.id,
+        p_start: thirtyDaysAgo.toISOString(),
+        p_end: now.toISOString(),
+        p_limit: 20,
+      })
+    : Promise.resolve({ data: undefined, error: null } as const);
+
+  const [{ data: daily, error: dailyErr }, { data: reasons }, { data: repeatCallers, error: repeatErr }, { data: recent }] = await Promise.all([
+    dailyPromise,
+    reasonsPromise,
+    repeatPromise,
+    recentPromise,
+  ]);
 
   if (dailyErr) {
     return NextResponse.json({ error: dailyErr.message }, { status: 500 });
@@ -106,45 +160,46 @@ export async function GET(request: Request) {
     return { ...totals, answerRate, avgDuration };
   };
 
-  // First-time callers for selected period
-  const { data: firstTimePeriod, error: ftPeriodErr } = await supabase.rpc("first_time_callers", {
-    p_business_id: biz.id,
-    p_start: periodStart.toISOString(),
-    p_end: now.toISOString(),
-  });
-
-  // If RPC not present, fallback to zero
-  const ftPeriod = ftPeriodErr || typeof firstTimePeriod !== "number" ? 0 : firstTimePeriod;
-
-  // Keep 7d and 30d for backward compatibility
-  const { data: firstTime7, error: ft7Err } = await supabase.rpc("first_time_callers", {
-    p_business_id: biz.id,
-    p_start: sevenDaysAgo.toISOString(),
-    p_end: now.toISOString(),
-  });
-  const { data: firstTime30, error: ft30Err } = await supabase.rpc("first_time_callers", {
-    p_business_id: biz.id,
-    p_start: thirtyDaysAgo.toISOString(),
-    p_end: now.toISOString(),
-  });
-
-  // If RPC not present, fallback to zero
-  const ft7 = ft7Err || typeof firstTime7 !== "number" ? 0 : firstTime7;
-  const ft30 = ft30Err || typeof firstTime30 !== "number" ? 0 : firstTime30;
+  // First-time callers only needed when period/KPIs requested
+  let ftPeriod = 0;
+  let ft7 = 0;
+  let ft30 = 0;
+  if (period) {
+    const [ftPeriodRes, ft7Res, ft30Res] = await Promise.all([
+      supabase.rpc("first_time_callers", {
+        p_business_id: biz.id,
+        p_start: periodStart!.toISOString(),
+        p_end: now.toISOString(),
+      }),
+      supabase.rpc("first_time_callers", {
+        p_business_id: biz.id,
+        p_start: sevenDaysAgo.toISOString(),
+        p_end: now.toISOString(),
+      }),
+      supabase.rpc("first_time_callers", {
+        p_business_id: biz.id,
+        p_start: thirtyDaysAgo.toISOString(),
+        p_end: now.toISOString(),
+      }),
+    ]);
+    ftPeriod = (ftPeriodRes.error || typeof ftPeriodRes.data !== "number") ? 0 : (ftPeriodRes.data as number);
+    ft7 = (ft7Res.error || typeof ft7Res.data !== "number") ? 0 : (ft7Res.data as number);
+    ft30 = (ft30Res.error || typeof ft30Res.data !== "number") ? 0 : (ft30Res.data as number);
+  }
 
   const kpis7 = sumWindow(sevenDaysAgo, now);
   const kpis30 = sumWindow(thirtyDaysAgo, now);
   const kpisToday = sumWindow(todayStart, now);
   
   // Calculate metrics for selected period
-  let kpisPeriod;
+  let kpisPeriod: { total: number; completed: number; missed: number; failed: number; answerRate: number; avgDuration: number } | undefined;
   if (period === 'today') {
     // For today, query the calls table directly to get real-time data
     const { data: todayCalls, error: todayErr } = await supabase
       .from("calls")
       .select("status, duration_seconds")
       .eq("business_id", biz.id)
-      .gte("started_at", periodStart.toISOString())
+      .gte("started_at", todayStart.toISOString())
       .lt("started_at", now.toISOString());
     
     if (todayErr) {
@@ -162,70 +217,40 @@ export async function GET(request: Request) {
       
       kpisPeriod = { total, completed, missed, failed, answerRate, avgDuration };
     }
-  } else {
-    kpisPeriod = sumWindow(periodStart, now);
+  } else if (period) {
+    kpisPeriod = sumWindow(periodStart!, now);
   }
 
-  // Disconnection reasons (last 30d)
-  const { data: reasons } = await supabase.rpc(
-    "reasons_breakdown",
-    {
-      p_business_id: biz.id,
-      p_start: thirtyDaysAgo.toISOString(),
-      p_end: now.toISOString(),
-    }
-  );
+  // no-op
 
-  // Top repeat callers (last 30d)
-  const { data: repeatCallers, error: repeatErr } = await supabase.rpc(
-    "repeat_callers",
-    {
-      p_business_id: biz.id,
-      p_start: thirtyDaysAgo.toISOString(),
-      p_end: now.toISOString(),
-      p_limit: 20,
-    }
-  );
+  const responsePayload: Record<string, unknown> = {};
 
-  // Directions breakdown (last 30d)
-  const { data: directions } = await supabase
-    .from("calls")
-    .select("direction")
-    .eq("business_id", biz.id)
-    .gte("started_at", thirtyDaysAgo.toISOString())
-    .lt("started_at", now.toISOString());
-
-  const directionCounts = (directions ?? []).reduce((acc: Record<string, number>, row: { direction: string | null }) => {
-    const key = (row.direction ?? "unknown").toLowerCase();
-    acc[key] = (acc[key] ?? 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
-
-  // Totals for status distribution in last 30d from daily rows
-  const totals30 = (daily ?? []).reduce(
-    (acc, r: { total_calls?: number; completed?: number; missed?: number; failed?: number }) => {
-      acc.total += r.total_calls ?? 0;
-      acc.completed += r.completed ?? 0;
-      acc.missed += r.missed ?? 0;
-      acc.failed += r.failed ?? 0;
-      return acc;
-    },
-    { total: 0, completed: 0, missed: 0, failed: 0 }
-  );
-
-  return NextResponse.json({
-    kpis: {
+  // When period is requested, return KPIs; otherwise, return analytics datasets
+  if (period) {
+    responsePayload.kpis = {
       today: { total: kpisToday.total, answerRate: kpisToday.answerRate, avgDuration: kpisToday.avgDuration },
       last7d: { total: kpis7.total, answerRate: kpis7.answerRate, avgDuration: kpis7.avgDuration, firstTimeCallers: ft7 },
       last30d: { total: kpis30.total, answerRate: kpis30.answerRate, avgDuration: kpis30.avgDuration, firstTimeCallers: ft30 },
-      selectedPeriod: { total: kpisPeriod.total, answerRate: kpisPeriod.answerRate, avgDuration: kpisPeriod.avgDuration, firstTimeCallers: ftPeriod },
+      selectedPeriod: { total: (kpisPeriod?.total ?? 0), answerRate: (kpisPeriod?.answerRate ?? 0), avgDuration: (kpisPeriod?.avgDuration ?? 0), firstTimeCallers: ftPeriod },
+    };
+  } else {
+    responsePayload.series = daily ?? [];
+    responsePayload.reasons = reasons ?? [];
+    responsePayload.repeatCallers = repeatErr ? [] : repeatCallers ?? [];
+  }
+
+  if (wantRecent) {
+    responsePayload.recent = recent ?? [];
+  }
+
+  responsePayload.period = period ?? null;
+
+  return new NextResponse(JSON.stringify(responsePayload), {
+    headers: {
+      // Cache at the edge for 30s; allow stale for 5m to smooth load
+      "Cache-Control": "s-maxage=30, stale-while-revalidate=300",
+      "Content-Type": "application/json",
     },
-    series: daily ?? [],
-    reasons: reasons ?? [],
-    repeatCallers: repeatErr ? [] : repeatCallers ?? [],
-    directions: Object.entries(directionCounts).map(([direction, cnt]) => ({ direction, cnt })),
-    totals30,
-    period,
   });
 }
 

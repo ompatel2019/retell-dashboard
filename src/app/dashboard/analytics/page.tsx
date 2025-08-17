@@ -46,7 +46,7 @@ function AnalyticsContent() {
   useEffect(() => {
     async function fetchAnalytics() {
       try {
-        const res = await fetch("/api/analytics", { cache: "no-store" });
+        const res = await fetch("/api/analytics");
         if (!res.ok) throw new Error("Failed to load analytics");
         const json = await res.json();
         setSeries(json.series ?? []);
