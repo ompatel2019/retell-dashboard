@@ -61,7 +61,9 @@ function getRecordAtPath(
     if (!isRecordLike(current)) return undefined;
     current = current[key];
   }
-  return isRecordLike(current) ? (current as Record<string, unknown>) : undefined;
+  return isRecordLike(current)
+    ? (current as Record<string, unknown>)
+    : undefined;
 }
 
 function formatDuration(seconds: number | null): string {
@@ -167,7 +169,11 @@ function CallDetailInner() {
     custom_analysis_data?: Record<string, unknown> | null;
   } | null>(null);
   const [events, setEvents] = useState<
-    Array<{ type: string; occurred_at: string; data: Record<string, unknown> | null }>
+    Array<{
+      type: string;
+      occurred_at: string;
+      data: Record<string, unknown> | null;
+    }>
   >();
 
   useEffect(() => {
@@ -224,10 +230,15 @@ function CallDetailInner() {
             if (analysisRoot) {
               setAnalysisInfo({
                 in_voicemail: getBooleanAtPath(analysisRoot, ["in_voicemail"]),
-                user_sentiment: getStringAtPath(analysisRoot, ["user_sentiment"]),
-                call_successful: getBooleanAtPath(analysisRoot, ["call_successful"]),
+                user_sentiment: getStringAtPath(analysisRoot, [
+                  "user_sentiment",
+                ]),
+                call_successful: getBooleanAtPath(analysisRoot, [
+                  "call_successful",
+                ]),
                 custom_analysis_data:
-                  getRecordAtPath(analysisRoot, ["custom_analysis_data"]) ?? null,
+                  getRecordAtPath(analysisRoot, ["custom_analysis_data"]) ??
+                  null,
               });
             }
           } else {
@@ -243,15 +254,20 @@ function CallDetailInner() {
             .order("occurred_at", { ascending: true })
             .limit(100);
           setEvents(
-            (evts ?? []).map((e: { type: unknown; occurred_at: unknown; data: unknown }) => ({
-              type: String(e.type ?? ""),
-              occurred_at: String(e.occurred_at ?? ""),
-              data:
-                (typeof e.data === "object" && e.data !== null && !Array.isArray(e.data)
-                  ? (e.data as Record<string, unknown>)
-                  : null) ?? null,
-            }))
+            (evts ?? []).map(
+              (e: { type: unknown; occurred_at: unknown; data: unknown }) => ({
+                type: String(e.type ?? ""),
+                occurred_at: String(e.occurred_at ?? ""),
+                data:
+                  (typeof e.data === "object" &&
+                  e.data !== null &&
+                  !Array.isArray(e.data)
+                    ? (e.data as Record<string, unknown>)
+                    : null) ?? null,
+              })
+            )
           );
+
         }
       } catch (e) {
         console.error("Error loading call data:", e);
@@ -337,7 +353,6 @@ function CallDetailInner() {
           <TabsTrigger value="summary">Summary</TabsTrigger>
           <TabsTrigger value="transcript">Transcript</TabsTrigger>
           <TabsTrigger value="audio">Audio</TabsTrigger>
-          <TabsTrigger value="caller">Caller Information</TabsTrigger>
           <TabsTrigger value="events">Events</TabsTrigger>
         </TabsList>
 
@@ -367,7 +382,9 @@ function CallDetailInner() {
                   <div className="grid grid-cols-2 gap-4 text-sm">
                     {typeof analysisInfo.call_successful === "boolean" && (
                       <div className="flex items-center justify-between gap-3">
-                        <div className="text-muted-foreground">Call Successful</div>
+                        <div className="text-muted-foreground">
+                          Call Successful
+                        </div>
                         <div className="font-medium">
                           {analysisInfo.call_successful ? "Yes" : "No"}
                         </div>
@@ -375,7 +392,9 @@ function CallDetailInner() {
                     )}
                     {analysisInfo.user_sentiment && (
                       <div className="flex items-center justify-between gap-3">
-                        <div className="text-muted-foreground">User Sentiment</div>
+                        <div className="text-muted-foreground">
+                          User Sentiment
+                        </div>
                         <div className="font-medium">
                           {analysisInfo.user_sentiment}
                         </div>
@@ -399,9 +418,16 @@ function CallDetailInner() {
               ) : (
                 <div className="space-y-2 text-sm">
                   {events.map((e, i) => (
-                    <div key={`${e.type}-${i}`} className="flex items-center justify-between">
-                      <div className="capitalize">{e.type.replaceAll("_", " ")}</div>
-                      <div className="text-muted-foreground">{new Date(e.occurred_at).toLocaleString()}</div>
+                    <div
+                      key={`${e.type}-${i}`}
+                      className="flex items-center justify-between"
+                    >
+                      <div className="capitalize">
+                        {e.type.replaceAll("_", " ")}
+                      </div>
+                      <div className="text-muted-foreground">
+                        {new Date(e.occurred_at).toLocaleString()}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -465,36 +491,6 @@ function CallDetailInner() {
               ) : (
                 <p className="text-muted-foreground">
                   No audio recording available.
-                </p>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="caller">
-          <Card>
-            <CardHeader>
-              <CardTitle>Caller Information</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {call.dynamic_variables &&
-              Object.keys(call.dynamic_variables).length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-                  {Object.entries(call.dynamic_variables).map(([key, val]) => (
-                    <div
-                      key={key}
-                      className="flex items-center justify-between gap-3"
-                    >
-                      <div className="text-muted-foreground">{key}</div>
-                      <div className="font-medium break-all">
-                        {typeof val === "string" ? val : JSON.stringify(val)}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-muted-foreground">
-                  No caller info captured.
                 </p>
               )}
             </CardContent>

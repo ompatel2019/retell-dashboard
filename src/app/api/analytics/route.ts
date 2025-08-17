@@ -107,20 +107,24 @@ export async function GET(request: Request) {
 
   // 2) Reasons + Repeat callers (only needed when no explicit KPI period is requested)
   const reasonsPromise = !period
-    ? supabase.rpc("reasons_breakdown", {
-        p_business_id: biz.id,
-        p_start: thirtyDaysAgo.toISOString(),
-        p_end: now.toISOString(),
-      })
+    ? supabase
+        .from("calls")
+        .select("disconnection_reason")
+        .eq("business_id", biz.id)
+        .gte("started_at", thirtyDaysAgo.toISOString())
+        .lt("started_at", now.toISOString())
+        .not("disconnection_reason", "is", null)
     : Promise.resolve({ data: undefined, error: null } as const);
 
   const repeatPromise = !period
-    ? supabase.rpc("repeat_callers", {
-        p_business_id: biz.id,
-        p_start: thirtyDaysAgo.toISOString(),
-        p_end: now.toISOString(),
-        p_limit: 20,
-      })
+    ? supabase
+        .from("calls")
+        .select("from_number, started_at")
+        .eq("business_id", biz.id)
+        .gte("started_at", thirtyDaysAgo.toISOString())
+        .lt("started_at", now.toISOString())
+        .not("from_number", "is", null)
+        .order("started_at", { ascending: false })
     : Promise.resolve({ data: undefined, error: null } as const);
 
   const [{ data: daily, error: dailyErr }, { data: reasons }, { data: repeatCallers, error: repeatErr }, { data: recent }] = await Promise.all([
@@ -133,6 +137,16 @@ export async function GET(request: Request) {
   if (dailyErr) {
     return NextResponse.json({ error: dailyErr.message }, { status: 500 });
   }
+
+  // Debug logging
+  console.log("Analytics debug:", {
+    businessId: biz.id,
+    dailyCount: daily?.length ?? 0,
+    reasonsCount: reasons?.length ?? 0,
+    repeatCallersCount: repeatCallers?.length ?? 0,
+    reasonsError: reasons ? null : "No reasons data",
+    repeatError: repeatErr?.message ?? null
+  });
 
   // Accumulate windows from daily rows
   const sumWindow = (startDate: Date, endDate: Date) => {
@@ -235,8 +249,41 @@ export async function GET(request: Request) {
     };
   } else {
     responsePayload.series = daily ?? [];
-    responsePayload.reasons = reasons ?? [];
-    responsePayload.repeatCallers = repeatErr ? [] : repeatCallers ?? [];
+    
+    // Process disconnection reasons from raw call data
+    if (reasons && Array.isArray(reasons)) {
+      const reasonCounts: Record<string, number> = {};
+      reasons.forEach(call => {
+        const reason = call.disconnection_reason || 'unknown';
+        reasonCounts[reason] = (reasonCounts[reason] || 0) + 1;
+      });
+      responsePayload.reasons = Object.entries(reasonCounts)
+        .map(([reason, cnt]) => ({ reason, cnt }))
+        .sort((a, b) => b.cnt - a.cnt);
+    } else {
+      responsePayload.reasons = [];
+    }
+    
+    // Process repeat callers from raw call data
+    if (repeatCallers && Array.isArray(repeatCallers)) {
+      const callerCounts: Record<string, { calls: number; last_call: string }> = {};
+      repeatCallers.forEach(call => {
+        const number = call.from_number;
+        if (!callerCounts[number]) {
+          callerCounts[number] = { calls: 0, last_call: call.started_at };
+        }
+        callerCounts[number].calls += 1;
+        if (call.started_at > callerCounts[number].last_call) {
+          callerCounts[number].last_call = call.started_at;
+        }
+      });
+      responsePayload.repeatCallers = Object.entries(callerCounts)
+        .map(([from_number, data]) => ({ from_number, ...data }))
+        .sort((a, b) => b.calls - a.calls)
+        .slice(0, 20);
+    } else {
+      responsePayload.repeatCallers = [];
+    }
   }
 
   if (wantRecent) {

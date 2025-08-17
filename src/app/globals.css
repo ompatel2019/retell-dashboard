@@ -123,22 +123,60 @@
 
 /* Custom scrollbar styling */
 :root, html {
-  scrollbar-color: var(--border) var(--muted); /* thumb track for Firefox */
+  scrollbar-color: #6b7280 #e5e7eb; /* thumb track for Firefox */
 }
 
 *::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 14px;
+  height: 14px;
 }
 
 *::-webkit-scrollbar-track {
   background: var(--muted);
+  border-radius: 7px;
 }
 
 *::-webkit-scrollbar-thumb {
-  background-color: var(--border);
-  border-radius: 8px;
+  background-color: #6b7280;
+  border-radius: 7px;
   border: 2px solid var(--muted);
+  transition: background-color 0.2s ease;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: #374151;
+}
+
+*::-webkit-scrollbar-corner {
+  background: var(--muted);
+}
+
+/* Dark mode specific scrollbar improvements */
+.dark *::-webkit-scrollbar-track {
+  background: #1f2937;
+}
+
+.dark *::-webkit-scrollbar-thumb {
+  background-color: #6b7280;
+  border-color: #1f2937;
+}
+
+.dark *::-webkit-scrollbar-thumb:hover {
+  background-color: #9ca3af;
+}
+
+/* Light mode specific scrollbar improvements */
+*::-webkit-scrollbar-track {
+  background: #f3f4f6;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: #9ca3af;
+  border-color: #f3f4f6;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: #6b7280;
 }
 
 /* Custom color utilities */
