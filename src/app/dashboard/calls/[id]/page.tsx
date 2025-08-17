@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { DashboardLayout } from "@/components/ui/dashboard-layout";
 import { BusinessProviderWrapper } from "@/components/providers/BusinessProviderWrapper";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Spinner } from "@/components/ui/spinner";
 import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -268,8 +269,8 @@ function CallDetailInner() {
 
   if (loading) {
     return (
-      <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-6">
-        <p className="text-muted-foreground">Loading call...</p>
+      <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-6 flex items-center justify-center">
+        <Spinner size="lg" className="text-muted-foreground" />
       </div>
     );
   }
@@ -341,48 +342,50 @@ function CallDetailInner() {
         </TabsList>
 
         <TabsContent value="summary">
-          <Card>
-            <CardHeader>
-              <CardTitle>AI Summary</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {summaryText && summaryText.trim().length > 0 ? (
-                <p className="whitespace-pre-wrap text-sm">{summaryText}</p>
-              ) : (
-                <p className="text-muted-foreground">
-                  No call summary available from analysis.
-                </p>
-              )}
-              {analysisInfo && (
-                <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-                  {typeof analysisInfo.in_voicemail === "boolean" && (
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="text-muted-foreground">In Voicemail</div>
-                      <div className="font-medium">
-                        {analysisInfo.in_voicemail ? "Yes" : "No"}
+          <div className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>AI Summary</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {summaryText && summaryText.trim().length > 0 ? (
+                  <p className="whitespace-pre-wrap text-sm">{summaryText}</p>
+                ) : (
+                  <p className="text-muted-foreground">
+                    No call summary available from analysis.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+
+            {analysisInfo && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Call Metrics</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    {typeof analysisInfo.call_successful === "boolean" && (
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-muted-foreground">Call Successful</div>
+                        <div className="font-medium">
+                          {analysisInfo.call_successful ? "Yes" : "No"}
+                        </div>
                       </div>
-                    </div>
-                  )}
-                  {typeof analysisInfo.call_successful === "boolean" && (
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="text-muted-foreground">Call Successful</div>
-                      <div className="font-medium">
-                        {analysisInfo.call_successful ? "Yes" : "No"}
+                    )}
+                    {analysisInfo.user_sentiment && (
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-muted-foreground">User Sentiment</div>
+                        <div className="font-medium">
+                          {analysisInfo.user_sentiment}
+                        </div>
                       </div>
-                    </div>
-                  )}
-                  {analysisInfo.user_sentiment && (
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="text-muted-foreground">User Sentiment</div>
-                      <div className="font-medium">
-                        {analysisInfo.user_sentiment}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
         </TabsContent>
 
         <TabsContent value="events">

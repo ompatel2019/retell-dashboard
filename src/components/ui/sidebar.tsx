@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
@@ -14,6 +15,7 @@ import {
   PanelRightClose,
   PanelRightOpen,
 } from "lucide-react";
+import { ProfilePopup } from "./profile-popup";
 
 interface SidebarProps {
   className?: string;
@@ -56,6 +58,7 @@ const navigation = [
 
 export function Sidebar({ className, collapsed, onToggle }: SidebarProps) {
   const pathname = usePathname();
+  const [profileOpen, setProfileOpen] = useState(false);
 
   return (
     <div
@@ -116,17 +119,20 @@ export function Sidebar({ className, collapsed, onToggle }: SidebarProps) {
 
       {/* Profile Section at Bottom */}
       <div className="border-t p-2">
-        <Link
-          href="/dashboard/profile"
+        <button
+          onClick={() => setProfileOpen(true)}
           className={cn(
-            "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground text-muted-foreground",
+            "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground text-muted-foreground w-full",
             collapsed && "justify-center px-2"
           )}
         >
           <User className="size-4" />
           {!collapsed && <span>Profile</span>}
-        </Link>
+        </button>
       </div>
+
+      {/* Profile Popup */}
+      <ProfilePopup open={profileOpen} onOpenChange={setProfileOpen} />
     </div>
   );
 }

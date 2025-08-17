@@ -3,6 +3,21 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 export async function updateSession(request: NextRequest) {
+  // Skip middleware for API routes and other system paths
+  const pathname = request.nextUrl.pathname;
+  
+  // Debug logging for API routes
+  if (pathname.startsWith('/api')) {
+    console.log('Middleware: Skipping API route:', pathname);
+    return NextResponse.next();
+  }
+  
+  if (pathname.startsWith('/_next') || 
+      pathname.startsWith('/favicon.ico') ||
+      pathname.includes('.')) {
+    return NextResponse.next();
+  }
+
   let supabaseResponse = NextResponse.next({
     request,
   });

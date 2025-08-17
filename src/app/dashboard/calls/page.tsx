@@ -6,6 +6,7 @@ import { BusinessProviderWrapper } from "@/components/providers/BusinessProvider
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
+import { Spinner } from "@/components/ui/spinner";
 
 import { Input } from "@/components/ui/input";
 import {
@@ -247,8 +248,8 @@ function CallsContent() {
         </div>
 
         {loading ? (
-          <div className="bg-card rounded-lg p-6">
-            <p className="text-muted-foreground">Loading calls...</p>
+          <div className="bg-card rounded-lg p-6 flex items-center justify-center">
+            <Spinner size="lg" className="text-muted-foreground" />
           </div>
         ) : calls.length === 0 ? (
           <div className="bg-card rounded-lg p-6">

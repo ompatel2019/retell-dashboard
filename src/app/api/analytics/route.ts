@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
 // Example API returning tenant-scoped analytics via RLS
-export async function GET() {
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const period = searchParams.get('period') || '7d';
+  
   const supabase = await createClient();
 
   const { data: userData } = await supabase.auth.getUser();
@@ -25,10 +28,40 @@ export async function GET() {
     return NextResponse.json({ error: "Account paused" }, { status: 403 });
   }
 
-  // Date windows: today, last 7d, last 30d
+  // Date windows based on selected period
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
   const now = new Date();
+
+  let periodStart: Date;
+  switch (period) {
+    case 'today':
+      periodStart = new Date(now);
+      periodStart.setHours(0, 0, 0, 0);
+      break;
+    case '24h':
+      periodStart = new Date(now);
+      periodStart.setHours(now.getHours() - 24);
+      break;
+    case '7d':
+      periodStart = new Date(now);
+      periodStart.setDate(now.getDate() - 7);
+      break;
+    case '14d':
+      periodStart = new Date(now);
+      periodStart.setDate(now.getDate() - 14);
+      break;
+    case '30d':
+      periodStart = new Date(now);
+      periodStart.setDate(now.getDate() - 30);
+      break;
+    case 'all':
+      periodStart = new Date(0); // Beginning of time
+      break;
+    default:
+      periodStart = new Date(now);
+      periodStart.setDate(now.getDate() - 7);
+  }
 
   const sevenDaysAgo = new Date(now);
   sevenDaysAgo.setDate(now.getDate() - 7);
@@ -73,7 +106,17 @@ export async function GET() {
     return { ...totals, answerRate, avgDuration };
   };
 
-  // First-time callers in last 7 and 30 days
+  // First-time callers for selected period
+  const { data: firstTimePeriod, error: ftPeriodErr } = await supabase.rpc("first_time_callers", {
+    p_business_id: biz.id,
+    p_start: periodStart.toISOString(),
+    p_end: now.toISOString(),
+  });
+
+  // If RPC not present, fallback to zero
+  const ftPeriod = ftPeriodErr || typeof firstTimePeriod !== "number" ? 0 : firstTimePeriod;
+
+  // Keep 7d and 30d for backward compatibility
   const { data: firstTime7, error: ft7Err } = await supabase.rpc("first_time_callers", {
     p_business_id: biz.id,
     p_start: sevenDaysAgo.toISOString(),
@@ -92,6 +135,36 @@ export async function GET() {
   const kpis7 = sumWindow(sevenDaysAgo, now);
   const kpis30 = sumWindow(thirtyDaysAgo, now);
   const kpisToday = sumWindow(todayStart, now);
+  
+  // Calculate metrics for selected period
+  let kpisPeriod;
+  if (period === 'today') {
+    // For today, query the calls table directly to get real-time data
+    const { data: todayCalls, error: todayErr } = await supabase
+      .from("calls")
+      .select("status, duration_seconds")
+      .eq("business_id", biz.id)
+      .gte("started_at", periodStart.toISOString())
+      .lt("started_at", now.toISOString());
+    
+    if (todayErr) {
+      console.error("Error fetching today's calls:", todayErr);
+      kpisPeriod = { total: 0, completed: 0, missed: 0, failed: 0, answerRate: 0, avgDuration: 0 };
+    } else {
+      const total = todayCalls?.length || 0;
+      const completed = todayCalls?.filter(c => c.status === 'completed').length || 0;
+      const missed = todayCalls?.filter(c => c.status === 'missed').length || 0;
+      const failed = todayCalls?.filter(c => c.status === 'failed').length || 0;
+      const durations = todayCalls?.map(c => c.duration_seconds).filter(d => d && d > 0) || [];
+      const avgDuration = durations.length > 0 ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length) : 0;
+      const denom = completed + missed + failed;
+      const answerRate = denom === 0 ? 0 : completed / denom;
+      
+      kpisPeriod = { total, completed, missed, failed, answerRate, avgDuration };
+    }
+  } else {
+    kpisPeriod = sumWindow(periodStart, now);
+  }
 
   // Disconnection reasons (last 30d)
   const { data: reasons } = await supabase.rpc(
@@ -145,12 +218,14 @@ export async function GET() {
       today: { total: kpisToday.total, answerRate: kpisToday.answerRate, avgDuration: kpisToday.avgDuration },
       last7d: { total: kpis7.total, answerRate: kpis7.answerRate, avgDuration: kpis7.avgDuration, firstTimeCallers: ft7 },
       last30d: { total: kpis30.total, answerRate: kpis30.answerRate, avgDuration: kpis30.avgDuration, firstTimeCallers: ft30 },
+      selectedPeriod: { total: kpisPeriod.total, answerRate: kpisPeriod.answerRate, avgDuration: kpisPeriod.avgDuration, firstTimeCallers: ftPeriod },
     },
     series: daily ?? [],
     reasons: reasons ?? [],
     repeatCallers: repeatErr ? [] : repeatCallers ?? [],
     directions: Object.entries(directionCounts).map(([direction, cnt]) => ({ direction, cnt })),
     totals30,
+    period,
   });
 }
 

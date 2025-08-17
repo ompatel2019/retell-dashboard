@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { User } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/client';
 import { BusinessProvider } from '@/lib/user/BusinessContext';
+import { Spinner } from '@/components/ui/spinner';
 
 interface BusinessProviderWrapperProps {
   children: React.ReactNode;
@@ -35,7 +36,11 @@ export function BusinessProviderWrapper({ children }: BusinessProviderWrapperPro
   }, [supabase.auth]);
 
   if (loading) {
-    return null; // or a loading spinner
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <Spinner size="lg" className="text-muted-foreground" />
+      </div>
+    );
   }
 
   return (

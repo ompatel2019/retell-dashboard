@@ -4,6 +4,7 @@ import { DashboardLayout } from "@/components/ui/dashboard-layout";
 import { BusinessProviderWrapper } from "@/components/providers/BusinessProviderWrapper";
 import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Spinner } from "@/components/ui/spinner";
 import {
   LineChart,
   Line,
@@ -91,7 +92,9 @@ function AnalyticsContent() {
           </CardHeader>
           <CardContent className="h-72">
             {loading ? (
-              <p className="text-muted-foreground">Loading...</p>
+              <div className="h-full flex items-center justify-center">
+                <Spinner size="lg" className="text-muted-foreground" />
+              </div>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={chartData} margin={{ left: 8, right: 8 }}>
@@ -115,7 +118,9 @@ function AnalyticsContent() {
           </CardHeader>
           <CardContent className="h-72">
             {loading ? (
-              <p className="text-muted-foreground">Loading...</p>
+              <div className="h-full flex items-center justify-center">
+                <Spinner size="lg" className="text-muted-foreground" />
+              </div>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={chartData} margin={{ left: 8, right: 8 }}>
@@ -138,7 +143,9 @@ function AnalyticsContent() {
           </CardHeader>
           <CardContent className="h-72">
             {loading ? (
-              <p className="text-muted-foreground">Loading...</p>
+              <div className="h-full flex items-center justify-center">
+                <Spinner size="lg" className="text-muted-foreground" />
+              </div>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={reasons.map((r: ReasonBreakdown) => ({ reason: r.reason ?? "unknown", count: r.cnt }))}>
@@ -159,7 +166,9 @@ function AnalyticsContent() {
           </CardHeader>
           <CardContent>
             {loading ? (
-              <p className="text-muted-foreground">Loading...</p>
+              <div className="flex items-center justify-center py-8">
+                <Spinner size="md" className="text-muted-foreground" />
+              </div>
             ) : repeatCallers.length === 0 ? (
               <p className="text-muted-foreground">No repeat callers in this window.</p>
             ) : (

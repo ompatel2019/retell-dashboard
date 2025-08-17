@@ -84,7 +84,14 @@ function toTranscriptJson(raw: unknown): TranscriptSeg[] | null {
   return out.length ? out : null;
 }
 
+export async function GET() {
+  console.log('Webhook GET received:', new Date().toISOString());
+  return NextResponse.json({ message: "Webhook endpoint is working" });
+}
+
 export async function POST(req: Request) {
+  console.log('Webhook POST received:', req.url);
+  
   const supabase = createServiceRoleClient();
 
   try {
@@ -197,6 +204,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error("retell webhook error", err);
+    console.error("Webhook request details:", {
+      url: req.url,
+      method: req.method,
+      headers: Object.fromEntries(req.headers.entries())
+    });
     // Return 2xx so provider doesn't retry-spam; your logs will capture details
     return NextResponse.json({ ok: true });
   }
