@@ -123,7 +123,7 @@
 
 /* Custom scrollbar styling */
 :root, html {
-  scrollbar-color: #2a2a2a #3a3a3a; /* thumb track for Firefox */
+  scrollbar-color: var(--border) var(--muted); /* thumb track for Firefox */
 }
 
 *::-webkit-scrollbar {
@@ -132,13 +132,13 @@
 }
 
 *::-webkit-scrollbar-track {
-  background: #3a3a3a;
+  background: var(--muted);
 }
 
 *::-webkit-scrollbar-thumb {
-  background-color: #2a2a2a;
+  background-color: var(--border);
   border-radius: 8px;
-  border: 2px solid #3a3a3a;
+  border: 2px solid var(--muted);
 }
 
 /* Custom color utilities */
