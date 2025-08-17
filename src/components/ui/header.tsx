@@ -1,5 +1,7 @@
 "use client";
 
+import { ThemeToggle } from "./theme-toggle";
+
 interface HeaderProps {
   className?: string;
 }
@@ -12,7 +14,7 @@ export function Header({ className }: HeaderProps) {
       </div>
       
       <div className="flex items-center gap-4">
-        {/* Header content can be added here in the future if needed */}
+        <ThemeToggle />
       </div>
     </header>
   );

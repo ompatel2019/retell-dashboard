@@ -206,10 +206,10 @@ function CallsContent() {
             placeholder="Search number..."
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            className="w-40 md:w-52 border border-white/50"
+            className="w-40 md:w-52"
           />
           <Select value={status} onValueChange={setStatus}>
-            <SelectTrigger className="w-36 border-white/50">
+            <SelectTrigger className="w-36">
               <SelectValue placeholder="Status" />
             </SelectTrigger>
             <SelectContent>
@@ -221,7 +221,7 @@ function CallsContent() {
             </SelectContent>
           </Select>
           <Select value={direction} onValueChange={setDirection}>
-            <SelectTrigger className="w-36 border-white/50">
+            <SelectTrigger className="w-36">
               <SelectValue placeholder="Direction" />
             </SelectTrigger>
             <SelectContent>
@@ -234,13 +234,13 @@ function CallsContent() {
             type="date"
             value={startDate}
             onChange={(e) => setStartDate(e.target.value)}
-            className="w-40 border border-white/50 [&::-webkit-calendar-picker-indicator]:filter [&::-webkit-calendar-picker-indicator]:invert"
+            className="w-40 [&::-webkit-calendar-picker-indicator]:filter [&::-webkit-calendar-picker-indicator]:invert"
           />
           <Input
             type="date"
             value={endDate}
             onChange={(e) => setEndDate(e.target.value)}
-            className="w-40 border border-white/50 [&::-webkit-calendar-picker-indicator]:filter [&::-webkit-calendar-picker-indicator]:invert"
+            className="w-40 [&::-webkit-calendar-picker-indicator]:filter [&::-webkit-calendar-picker-indicator]:invert"
           />
           <Button variant="default" onClick={resetFilters} className="">
             Reset
