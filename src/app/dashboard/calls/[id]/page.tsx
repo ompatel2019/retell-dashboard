@@ -66,6 +66,24 @@ function getRecordAtPath(
     : undefined;
 }
 
+// Recursively search an object graph for the first object value at a given key
+function findRecordByKeyDeep(
+  obj: unknown,
+  keyName: string
+): Record<string, unknown> | undefined {
+  if (!isRecordLike(obj)) return undefined;
+  for (const [k, v] of Object.entries(obj)) {
+    if (k === keyName && isRecordLike(v)) return v as Record<string, unknown>;
+    const nested = findRecordByKeyDeep(v, keyName);
+    if (nested) return nested;
+  }
+  return undefined;
+}
+
+function toDisplayableKey(rawKey: string): string {
+  return rawKey.replaceAll("_", " ").replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
 function formatDuration(seconds: number | null): string {
   if (!seconds) return "N/A";
   const mins = Math.floor(seconds / 60);
@@ -175,6 +193,9 @@ function CallDetailInner() {
       data: Record<string, unknown> | null;
     }>
   >();
+  const [callerInfo, setCallerInfo] = useState<Record<string, unknown> | null>(
+    null
+  );
 
   useEffect(() => {
     async function load() {
@@ -268,6 +289,38 @@ function CallDetailInner() {
             )
           );
 
+          // Extract dynamic variables from the latest call_ended event
+          const timeline = (evts ?? []) as Array<{
+            type?: string;
+            occurred_at?: string;
+            data?: unknown;
+          }>;
+          const endedEvents = timeline
+            .filter((e) => String(e.type ?? "") === "call_ended")
+            .sort(
+              (a, b) =>
+                new Date(String(a.occurred_at ?? 0)).getTime() -
+                new Date(String(b.occurred_at ?? 0)).getTime()
+            );
+          const latestEnded = endedEvents[endedEvents.length - 1];
+          if (latestEnded && latestEnded.data) {
+            // Common locations: root or under call
+            const root = isRecordLike(latestEnded.data)
+              ? (latestEnded.data as Record<string, unknown>)
+              : {};
+            const fromRoot = findRecordByKeyDeep(
+              root,
+              "collected_dynamic_variables"
+            );
+            const dynamicFromCall = getRecordAtPath(root, [
+              "call",
+              "dynamic_variables",
+            ]);
+            const chosen = fromRoot ?? dynamicFromCall ?? null;
+            if (chosen && Object.keys(chosen).length > 0) {
+              setCallerInfo(chosen);
+            }
+          }
         }
       } catch (e) {
         console.error("Error loading call data:", e);
@@ -352,7 +405,7 @@ function CallDetailInner() {
         <TabsList>
           <TabsTrigger value="summary">Summary</TabsTrigger>
           <TabsTrigger value="transcript">Transcript</TabsTrigger>
-          <TabsTrigger value="audio">Audio</TabsTrigger>
+          <TabsTrigger value="caller-info">Caller Information</TabsTrigger>
           <TabsTrigger value="events">Events</TabsTrigger>
         </TabsList>
 
@@ -405,6 +458,67 @@ function CallDetailInner() {
               </Card>
             )}
           </div>
+        </TabsContent>
+
+        <TabsContent value="caller-info">
+          <Card>
+            <CardHeader>
+              <CardTitle>Caller Information</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {(() => {
+                // Prefer callerInfo (from call_ended event). Fallback to call.dynamic_variables
+                const sourceVars: Record<string, unknown> | null =
+                  callerInfo ?? call.dynamic_variables ?? null;
+                if (!sourceVars || Object.keys(sourceVars).length === 0) {
+                  return (
+                    <p className="text-muted-foreground text-sm">
+                      No caller information captured.
+                    </p>
+                  );
+                }
+
+                const hiddenKeys = new Set([
+                  "previous_node",
+                  "current_node",
+                  "previousNode",
+                  "currentNode",
+                ]);
+
+                const entries = Object.entries(sourceVars)
+                  .filter(([key]) => !hiddenKeys.has(key))
+                  .filter(([, value]) =>
+                    ["string", "number", "boolean"].includes(typeof value)
+                  ) as Array<[string, string | number | boolean]>;
+
+                if (entries.length === 0) {
+                  return (
+                    <p className="text-muted-foreground text-sm">
+                      No important caller fields to display.
+                    </p>
+                  );
+                }
+
+                return (
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    {entries.map(([key, value]) => (
+                      <div
+                        key={key}
+                        className="flex items-center justify-between"
+                      >
+                        <div className="text-muted-foreground">
+                          {toDisplayableKey(key)}
+                        </div>
+                        <div className="font-medium truncate max-w-[60%] text-right">
+                          {String(value)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="events">
@@ -475,23 +589,6 @@ function CallDetailInner() {
                     </div>
                   ))}
                 </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="audio">
-          <Card>
-            <CardHeader>
-              <CardTitle>Recording</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {call.audio_url ? (
-                <audio controls src={call.audio_url} className="w-full" />
-              ) : (
-                <p className="text-muted-foreground">
-                  No audio recording available.
-                </p>
               )}
             </CardContent>
           </Card>
