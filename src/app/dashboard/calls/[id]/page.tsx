@@ -406,6 +406,7 @@ function CallDetailInner() {
           <TabsTrigger value="summary">Summary</TabsTrigger>
           <TabsTrigger value="transcript">Transcript</TabsTrigger>
           <TabsTrigger value="caller-info">Caller Information</TabsTrigger>
+          <TabsTrigger value="audio">Audio</TabsTrigger>
           <TabsTrigger value="events">Events</TabsTrigger>
         </TabsList>
 
@@ -589,6 +590,21 @@ function CallDetailInner() {
                     </div>
                   ))}
                 </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="audio">
+          <Card>
+            <CardHeader>
+              <CardTitle>Recording</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {call.audio_url ? (
+                <audio controls src={call.audio_url} className="w-full" />
+              ) : (
+                <p className="text-muted-foreground">No audio recording available.</p>
               )}
             </CardContent>
           </Card>
