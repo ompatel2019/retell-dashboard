@@ -7,11 +7,9 @@ import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
   Phone,
-  Calendar,
   BarChart3,
   Settings,
   User,
-  Plug,
   PanelRightClose,
   PanelRightOpen,
 } from "lucide-react";
@@ -35,19 +33,9 @@ const navigation = [
     icon: Phone,
   },
   {
-    name: "Bookings",
-    href: "/dashboard/bookings",
-    icon: Calendar,
-  },
-  {
     name: "Analytics",
     href: "/dashboard/analytics",
     icon: BarChart3,
-  },
-  {
-    name: "Integrations",
-    href: "/dashboard/integrations",
-    icon: Plug,
   },
   {
     name: "Settings",
