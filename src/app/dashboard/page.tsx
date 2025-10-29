@@ -41,62 +41,15 @@ function DashboardContent() {
   const [recent, setRecent] = useState<RecentCall[]>([]);
 
   useEffect(() => {
-    async function fetchAnalytics() {
-      try {
-        const periodParam =
-          selectedPeriod === "All time"
-            ? "all"
-            : selectedPeriod === "Today"
-            ? "today"
-            : selectedPeriod;
-        const [kpiRes, recentRes] = await Promise.all([
-          fetch(`/api/analytics?period=${periodParam}`),
-          fetch("/api/analytics?recent=1"),
-        ]);
-
-        if (kpiRes.ok) {
-          const json = await kpiRes.json();
-          setKpis(json.kpis);
-        }
-
-        if (recentRes.ok) {
-          const json = await recentRes.json();
-          setRecent((json.recent as RecentCall[]) ?? []);
-        }
-      } catch (e) {
-        console.error(e);
-      } finally {
-        setLoading(false);
-      }
-    }
-    fetchAnalytics();
+    // Disable analytics fetching entirely
+    setKpis(null);
+    setRecent([]);
+    setLoading(false);
   }, []);
 
-  // Separate effect for period changes to show loading state
+  // Disable analytics period fetching entirely
   useEffect(() => {
-    if (!loading) {
-      // Only run after initial load
-      setPeriodLoading(true);
-      async function fetchPeriodAnalytics() {
-        try {
-          const periodParam =
-            selectedPeriod === "All time"
-              ? "all"
-              : selectedPeriod === "Today"
-              ? "today"
-              : selectedPeriod;
-          const res = await fetch(`/api/analytics?period=${periodParam}`);
-          if (!res.ok) throw new Error("Failed to load analytics");
-          const json = await res.json();
-          setKpis(json.kpis);
-        } catch (e) {
-          console.error(e);
-        } finally {
-          setPeriodLoading(false);
-        }
-      }
-      fetchPeriodAnalytics();
-    }
+    setPeriodLoading(false);
   }, [selectedPeriod, loading]);
 
   const fmtDur = (s?: number) => {

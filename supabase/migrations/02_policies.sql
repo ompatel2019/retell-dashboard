@@ -1,35 +1,25 @@
 -- Enable RLS on core tables
 alter table public.businesses enable row level security;
-alter table public.memberships enable row level security;
 alter table public.agents enable row level security;
 alter table public.phone_numbers enable row level security;
 
--- Memberships: a user can see their own membership rows
-drop policy if exists "read own memberships" on public.memberships;
-create policy "read own memberships" on public.memberships
-for select
-using (user_id = auth.uid());
-
--- Businesses: a user can read businesses they belong to
+-- Businesses: a user can read their own business (1:1 relationship)
 drop policy if exists "read own businesses" on public.businesses;
 create policy "read own businesses" on public.businesses
 for select
-using (exists (
-  select 1 from public.memberships m
-  where m.business_id = businesses.id and m.user_id = auth.uid()
-));
+using (user_id = auth.uid());
 
--- Agents: readable if in the same business
+-- Agents: readable if in the same business as the user
 drop policy if exists "read agents in business" on public.agents;
 create policy "read agents in business" on public.agents
 for select
-using (agents.business_id in (select public.current_business_ids()));
+using (agents.business_id = (select public.current_business_id()));
 
--- Phone numbers: readable if in the same business
+-- Phone numbers: readable if in the same business as the user
 drop policy if exists "read phone numbers in business" on public.phone_numbers;
 create policy "read phone numbers in business" on public.phone_numbers
 for select
-using (phone_numbers.business_id in (select public.current_business_ids()));
+using (phone_numbers.business_id = (select public.current_business_id()));
 
 -- Example: your analytics tables (calls, call_events, bookings) should have business_id and the same pattern
 -- Uncomment and adapt if those tables exist already

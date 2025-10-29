@@ -10,19 +10,13 @@ export function cn(...inputs: ClassValue[]) {
 
 export interface Business {
   id: string;
+  user_id: string;
   name: string;
   timezone: string;
-  created_at: string;
   paused: boolean;
   paused_at: string | null;
   paused_reason: string | null;
   paused_until: string | null;
-}
-    
-export interface Membership {
-  user_id: string;
-  business_id: string;
-  role: string;
   created_at: string;
 }
 
@@ -43,14 +37,13 @@ export interface PhoneNumber {
 
 export interface BusinessData {
   business: Business;
-  membership: Membership;
   agents: Agent[];
   phoneNumbers: PhoneNumber[];
 }
 
 /**
- * Returns the current user's Business + Membership + Agents + Phone Numbers.
- * - If the user has no membership, returns null (caller can show onboarding).
+ * Returns the current user's Business + Agents + Phone Numbers.
+ * - If the user has no business, returns null (caller can show onboarding).
  * - Rely on RLS to scope results to this user.
  */
 export async function getCurrentUserBusiness(user: User): Promise<BusinessData | null> {
@@ -58,47 +51,21 @@ export async function getCurrentUserBusiness(user: User): Promise<BusinessData |
 
   const supabase = createClient();
 
-  // 1) Fetch membership with joined business (zero or one)
-  const { data: membershipRow, error: membershipError } = await supabase
-    .from("memberships")
-    .select(
-      `
-      user_id,
-      business_id,
-      role,
-      created_at,
-      business:businesses(
-        id,
-        name,
-        timezone,
-        created_at,
-        paused,
-        paused_at,
-        paused_reason,
-        paused_until
-      )
-    `
-    )
+  // 1) Fetch business for this user (1:1 relationship)
+  const { data: business, error: businessError } = await supabase
+    .from("businesses")
+    .select("id,user_id,name,timezone,paused,paused_at,paused_reason,paused_until,created_at")
     .eq("user_id", user.id)
     .maybeSingle();
 
-  if (membershipError) {
-    // Surface a concise, actionable error
-    throw new Error(`Failed to fetch membership: ${membershipError.message ?? "Unknown error"}`);
+  if (businessError) {
+    throw new Error(`Failed to fetch business: ${businessError.message ?? "Unknown error"}`);
   }
 
-  if (!membershipRow || !membershipRow.business) {
-    // No membership for this user yet
+  if (!business) {
+    // No business for this user yet
     return null;
   }
-
-  const business = membershipRow.business as unknown as Business;
-  const membership: Membership = {
-    user_id: membershipRow.user_id,
-    business_id: membershipRow.business_id,
-    role: membershipRow.role,
-    created_at: membershipRow.created_at,
-  };
 
   // 2) Fetch agents for this business
   const { data: agents = [], error: agentsError } = await supabase
@@ -120,7 +87,7 @@ export async function getCurrentUserBusiness(user: User): Promise<BusinessData |
     throw new Error(`Failed to fetch phone numbers: ${phoneError.message ?? "Unknown error"}`);
   }
 
-  return { business, membership, agents, phoneNumbers } as BusinessData;
+  return { business, agents, phoneNumbers } as BusinessData;
 }
 
 /**
@@ -131,11 +98,11 @@ export async function getCurrentUserBusinessId(user: User): Promise<string | nul
   const supabase = createClient();
 
   const { data, error } = await supabase
-    .from("memberships")
-    .select("business_id")
+    .from("businesses")
+    .select("id")
     .eq("user_id", user.id)
     .maybeSingle();
 
   if (error) return null;
-  return data?.business_id ?? null;
+  return data?.id ?? null;
 }

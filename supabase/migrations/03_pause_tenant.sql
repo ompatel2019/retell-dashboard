@@ -32,7 +32,7 @@ create policy "read agents in business"
 on public.agents
 for select
 using (
-  agents.business_id in (select public.current_business_ids())
+  agents.business_id = (select public.current_business_id())
   and not public.is_business_paused(agents.business_id)
 );
 
@@ -42,7 +42,7 @@ create policy "read phone numbers in business"
 on public.phone_numbers
 for select
 using (
-  phone_numbers.business_id in (select public.current_business_ids())
+  phone_numbers.business_id = (select public.current_business_id())
   and not public.is_business_paused(phone_numbers.business_id)
 );
 
@@ -50,10 +50,7 @@ using (
 drop policy if exists "read own businesses" on public.businesses;
 create policy "read own businesses" on public.businesses
 for select
-using (exists (
-  select 1 from public.memberships m
-  where m.business_id = businesses.id and m.user_id = auth.uid()
-));
+using (user_id = auth.uid());
 
 -- Admin helper to flip pause on/off (to be called with service role)
 create or replace function public.admin_set_business_pause(

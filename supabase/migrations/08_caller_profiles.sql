@@ -121,7 +121,7 @@ alter table public.caller_profiles enable row level security;
 drop policy if exists "read caller_profiles in business" on public.caller_profiles;
 create policy "read caller_profiles in business" on public.caller_profiles
 for select using (
-  caller_profiles.business_id in (select public.current_business_ids())
+  caller_profiles.business_id = (select public.current_business_id())
   and not public.is_business_paused(caller_profiles.business_id)
 );
 

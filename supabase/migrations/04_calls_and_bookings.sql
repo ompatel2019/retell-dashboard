@@ -126,34 +126,34 @@ alter table public.call_events  enable row level security;
 alter table public.bookings     enable row level security;
 
 -- Assumes helper functions exist from previous migrations:
---   public.current_business_ids() -> setof uuid
+--   public.current_business_id() -> uuid
 --   public.is_business_paused(uuid) -> boolean
 
 drop policy if exists "read contacts in business" on public.contacts;
 create policy "read contacts in business" on public.contacts
 for select using (
-  contacts.business_id in (select public.current_business_ids())
+  contacts.business_id = (select public.current_business_id())
   and not public.is_business_paused(contacts.business_id)
 );
 
 drop policy if exists "read calls in business" on public.calls;
 create policy "read calls in business" on public.calls
 for select using (
-  calls.business_id in (select public.current_business_ids())
+  calls.business_id = (select public.current_business_id())
   and not public.is_business_paused(calls.business_id)
 );
 
 drop policy if exists "read call_events in business" on public.call_events;
 create policy "read call_events in business" on public.call_events
 for select using (
-  call_events.business_id in (select public.current_business_ids())
+  call_events.business_id = (select public.current_business_id())
   and not public.is_business_paused(call_events.business_id)
 );
 
 drop policy if exists "read bookings in business" on public.bookings;
 create policy "read bookings in business" on public.bookings
 for select using (
-  bookings.business_id in (select public.current_business_ids())
+  bookings.business_id = (select public.current_business_id())
   and not public.is_business_paused(bookings.business_id)
 );
 

@@ -20,8 +20,7 @@ interface DashboardLayoutProps {
 export function DashboardLayout({ children }: DashboardLayoutProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const { businessData, loading } = useBusinessContext();
-  const shouldBlock =
-    !loading && (!businessData || businessData.business.paused);
+  const shouldBlock = false;
 
   const toggleSidebar = () => {
     setSidebarCollapsed(!sidebarCollapsed);

@@ -36,13 +36,13 @@ async function setupTestData() {
     console.log(`✅ User authenticated: ${user.email}`);
     
     // Check if user already has business data
-    const { data: existingMembership } = await supabase
-      .from('memberships')
+    const { data: existingBusiness } = await supabase
+      .from('businesses')
       .select('*')
       .eq('user_id', user.id)
       .single();
     
-    if (existingMembership) {
+    if (existingBusiness) {
       console.log("✅ User already has business data");
       return;
     }
@@ -51,6 +51,7 @@ async function setupTestData() {
     const { data: business, error: businessError } = await supabase
       .from('businesses')
       .insert({ 
+        user_id: user.id,
         name: 'Test Business',
         timezone: 'Australia/Sydney'
       })
@@ -63,22 +64,6 @@ async function setupTestData() {
     }
     
     console.log(`✅ Created business: ${business.name} (${business.id})`);
-    
-    // Create membership
-    const { error: membershipError } = await supabase
-      .from('memberships')
-      .insert({
-        user_id: user.id,
-        business_id: business.id,
-        role: 'owner'
-      });
-    
-    if (membershipError) {
-      console.error("❌ Failed to create membership:", membershipError);
-      return;
-    }
-    
-    console.log("✅ Created membership");
     
     // Create a test agent
     const { error: agentError } = await supabase

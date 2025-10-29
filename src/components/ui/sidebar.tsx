@@ -7,7 +7,6 @@ import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
   Phone,
-  BarChart3,
   Settings,
   User,
   PanelRightClose,
@@ -31,11 +30,6 @@ const navigation = [
     name: "Calls",
     href: "/dashboard/calls",
     icon: Phone,
-  },
-  {
-    name: "Analytics",
-    href: "/dashboard/analytics",
-    icon: BarChart3,
   },
   {
     name: "Settings",

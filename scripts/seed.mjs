@@ -67,23 +67,17 @@ async function ensureUser(emailArg, passwordArg) {
 async function run() {
   const user = await ensureUser(email, password);
 
-  // Create business
-  const businessInsert = await supabase
+  // Create business (1:1 with user)
+  const businessUpsert = await supabase
     .from("businesses")
-    .insert({ name: businessName })
+    .upsert(
+      { user_id: user.id, name: businessName },
+      { onConflict: "user_id", ignoreDuplicates: true }
+    )
     .select("id")
     .single();
 
-  const business = assertOk(businessInsert, "Insert business");
-
-  // Create membership
-  const membershipUpsert = await supabase
-    .from("memberships")
-    .upsert({ user_id: user.id, business_id: business.id, role: "owner" }, {
-      onConflict: "user_id,business_id",
-      ignoreDuplicates: true,
-    });
-  assertOk(membershipUpsert, "Upsert membership");
+  const business = assertOk(businessUpsert, "Upsert business");
 
   // Optional agent
   if (retellAgentId) {
