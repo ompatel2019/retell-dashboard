@@ -19,7 +19,6 @@ export async function POST(req: Request) {
     const from = normalizePhoneNumber(formData.get("From")?.toString());
     const to = normalizePhoneNumber(formData.get("To")?.toString());
     const body = formData.get("Body")?.toString() ?? null;
-    const provider = Object.fromEntries(formData.entries());
     console.log("[inbound] parsed fields", { from, to, body });
 
     if (!from) {
@@ -29,50 +28,19 @@ export async function POST(req: Request) {
 
     const supabase = createServiceRoleClient();
 
-    // Find call by phone number in simplified calls table
-    const { data: call } = await supabase
-      .from("calls")
-      .select("id,phone,inbound")
-      .eq("phone", from)
-      .order("date", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    console.log("[inbound] resolved call by phone", call ?? null);
+    // Store inbound SMS in interactions table
+    console.log("[inbound] storing inbound SMS in interactions table");
+    const { error: insertErr } = await supabase.from("interactions").insert({
+      phone: from,
+      outbound: null,
+      inbound: body,
+    });
 
-    if (!call) {
-      console.warn("[inbound] no matching call found for phone:", from);
-      return new NextResponse(
-        '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
-        { status: 200, headers: { "Content-Type": "text/xml" } }
-      );
-    }
-
-    // Append to inbound array in calls table
-    const entry = {
-      from,
-      to,
-      body,
-      at: new Date().toISOString(),
-      provider,
-    };
-
-    const inbound = Array.isArray(call.inbound)
-      ? [...call.inbound, entry]
-      : [entry];
-
-    console.log("[inbound] updating calls table with inbound count", inbound.length);
-    const { error: updateErr } = await supabase
-      .from("calls")
-      .update({ inbound })
-      .eq("id", call.id);
-
-    if (updateErr) {
-      console.error("[inbound] error updating calls table", updateErr);
+    if (insertErr) {
+      console.error("[inbound] error inserting into interactions", insertErr);
     } else {
-      console.log("[inbound] calls table updated with new inbound SMS", call.id);
+      console.log("[inbound] stored inbound SMS in interactions for phone:", from);
     }
-
-    // Do not insert into call_events to avoid type constraint; source of truth is calls.inbound
 
     console.log("[inbound] responding with empty TwiML");
     return new NextResponse(

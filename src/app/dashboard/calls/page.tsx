@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { DashboardLayout } from "@/components/ui/dashboard-layout";
-import { BusinessProviderWrapper } from "@/components/providers/BusinessProviderWrapper";
 import { createClient } from "@/lib/supabase/client";
 import { Spinner } from "@/components/ui/spinner";
 import { toast } from "sonner";
@@ -247,10 +246,8 @@ function CallsContent() {
 
 export default function CallsPage() {
   return (
-    <BusinessProviderWrapper>
-      <DashboardLayout>
-        <CallsContent />
-      </DashboardLayout>
-    </BusinessProviderWrapper>
+    <DashboardLayout>
+      <CallsContent />
+    </DashboardLayout>
   );
 }

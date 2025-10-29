@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createServiceRoleClient } from "@/lib/supabase/server-admin";
 import twilio from "twilio";
 
 export async function POST(req: Request) {
@@ -31,11 +32,20 @@ export async function POST(req: Request) {
 
   try {
     const client = twilio(twilioSid, twilioToken);
+    const messageBody = "hello";
 
     const message = await client.messages.create({
-      body: "hello",
+      body: messageBody,
       from: twilioPhoneNumber,
       to: body.phoneNumber,
+    });
+
+    // Store in interactions table
+    const serviceSupabase = createServiceRoleClient();
+    await serviceSupabase.from("interactions").insert({
+      phone: body.phoneNumber,
+      outbound: messageBody,
+      inbound: null,
     });
 
     return NextResponse.json({
