@@ -40,31 +40,7 @@ export async function POST(req: Request) {
     console.log("[inbound] resolved call by phone", call ?? null);
 
     if (!call) {
-      // No call found for this phone number; still store in call_events for auditing
       console.warn("[inbound] no matching call found for phone:", from);
-      
-      // Still store the inbound SMS in call_events for reference
-      const entry = {
-        from,
-        to,
-        body,
-        at: new Date().toISOString(),
-        provider,
-      };
-
-      const { error: insertErr } = await supabase.from("call_events").insert({
-        call_id: null,
-        type: "inbound_sms_no_call_match",
-        data: { note: "SMS received but no matching call found", phone: from },
-        inbound: [entry],
-      });
-      
-      if (insertErr) {
-        console.error("[inbound] error inserting orphaned inbound SMS", insertErr);
-      } else {
-        console.log("[inbound] stored orphaned inbound SMS in call_events");
-      }
-
       return new NextResponse(
         '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
         { status: 200, headers: { "Content-Type": "text/xml" } }
@@ -96,19 +72,7 @@ export async function POST(req: Request) {
       console.log("[inbound] calls table updated with new inbound SMS", call.id);
     }
 
-    // Also store in call_events for full audit trail
-    const { error: evtErr } = await supabase.from("call_events").insert({
-      call_id: null,
-      type: "inbound_sms",
-      data: { note: "inbound SMS appended to calls table", phone: from },
-      inbound: [entry],
-    });
-    
-    if (evtErr) {
-      console.error("[inbound] error inserting call_event (non-fatal)", evtErr);
-    } else {
-      console.log("[inbound] also stored in call_events for audit");
-    }
+    // Do not insert into call_events to avoid type constraint; source of truth is calls.inbound
 
     console.log("[inbound] responding with empty TwiML");
     return new NextResponse(
