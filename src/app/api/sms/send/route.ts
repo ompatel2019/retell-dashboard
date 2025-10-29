@@ -32,7 +32,8 @@ export async function POST(req: Request) {
 
   try {
     const client = twilio(twilioSid, twilioToken);
-    const messageBody = "hello";
+    const messageBody =
+      "hi, i tried calling but no one answered. this could've been a $1,000 customer but thankfully it's not. however, i build something that captures missed calls so you don't ACTUALLY miss $1,000 customers. reply with a YES and we'll personally call you - for a free trial 😊";
 
     const message = await client.messages.create({
       body: messageBody,

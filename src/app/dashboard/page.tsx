@@ -47,11 +47,15 @@ function DashboardContent() {
           .not("outbound", "is", null);
         const repliesRes = await supabase
           .from("interactions")
-          .select("id", { count: "exact", head: true })
+          .select("phone")
           .not("inbound", "is", null);
 
         const sent = sentRes.count ?? 0;
-        const replies = repliesRes.count ?? 0;
+        // Count distinct phone numbers (one per number, regardless of reply count)
+        const uniquePhonesWithReplies = new Set(
+          (repliesRes.data ?? []).map((r) => r.phone)
+        );
+        const replies = uniquePhonesWithReplies.size;
         setTotalSmsSent(sent);
         setTotalReplies(replies);
         setReplyRate(
@@ -126,9 +130,7 @@ function DashboardContent() {
         <Card>
           <CardContent className="p-6">
             <div className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <h3 className="tracking-tight text-sm font-medium">
-                Total Replies
-              </h3>
+              <h3 className="tracking-tight text-sm font-medium">Replies</h3>
             </div>
             <div className="text-2xl font-bold">
               {loading ? (

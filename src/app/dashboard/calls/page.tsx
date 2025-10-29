@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Spinner } from "@/components/ui/spinner";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -372,10 +373,10 @@ function CallsContent() {
             <div className="grid grid-cols-7 bg-muted h-11 items-center">
               <div className="px-3 font-medium">Business</div>
               <div className="px-3 font-medium">Phone</div>
-              <div className="px-3 font-medium">Status</div>
+              <div className="px-3 font-medium">Call Outcome</div>
               <div className="px-3 font-medium">Time</div>
               <div className="px-3 font-medium">Date</div>
-              <div className="px-3 font-medium">Message</div>
+              <div className="px-3 font-medium">Status</div>
               <div className="px-3 font-medium">Actions</div>
             </div>
 
@@ -432,11 +433,17 @@ function CallsContent() {
                   <div className="px-3">{timeAest}</div>
                   <div className="px-3">{formatDate(call.date)}</div>
                   <div className="px-3">
-                    {call.phone && phonesWithReplies.has(call.phone)
-                      ? "Replied"
-                      : call.phone && phonesWithOutbound.has(call.phone)
-                      ? "Sent"
-                      : "-"}
+                    {call.phone && phonesWithReplies.has(call.phone) ? (
+                      <Badge className="bg-green-500 hover:bg-green-600 text-white rounded-full border-transparent">
+                        Replied
+                      </Badge>
+                    ) : call.phone && phonesWithOutbound.has(call.phone) ? (
+                      <Badge className="bg-orange-500 hover:bg-orange-600 text-white rounded-full border-transparent">
+                        Messaged
+                      </Badge>
+                    ) : (
+                      "-"
+                    )}
                   </div>
                   <div className="px-3" onClick={(e) => e.stopPropagation()}>
                     {showSmsButton && (
