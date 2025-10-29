@@ -83,13 +83,13 @@ export async function POST(req: Request) {
   try {
     const supabase = createServiceRoleClient();
     const body = await req.json();
-    
+
     console.log("=== FULL WEBHOOK BODY ===");
     console.log(JSON.stringify(body, null, 2));
-    
+
     const event: string = body?.event ?? "call_event";
     const call: RetellCall = body?.call ?? {};
-    
+
     console.log("=== PARSED VALUES ===");
     console.log("Event:", event);
     console.log("Call object keys:", Object.keys(call));
@@ -117,9 +117,12 @@ export async function POST(req: Request) {
 
     // ---- One-account mode: business name comes from webhook payload only ----
     console.log("=== EXTRACTING BUSINESS NAME ===");
-    console.log("dynamic_variables:", JSON.stringify(call.dynamic_variables, null, 2));
+    console.log(
+      "dynamic_variables:",
+      JSON.stringify(call.dynamic_variables, null, 2)
+    );
     console.log("metadata:", JSON.stringify(call.metadata, null, 2));
-    
+
     const businessName =
       (call.dynamic_variables?.business_name as string) ??
       (call.metadata?.business_name as string) ??
@@ -134,7 +137,7 @@ export async function POST(req: Request) {
     // ---- Normalize values ----
     const direction = normalizeDirection(call.direction);
     console.log("Normalized direction:", direction);
-    
+
     let status =
       event === "call_started" || event === "call_ended"
         ? mapStatus(ended_at, call.disconnection_reason ?? null)
@@ -148,39 +151,21 @@ export async function POST(req: Request) {
 
     // no transcript/summary/audio needed for simple storage
 
-    // ---- Skip heavy storage; just store the minimal fields required ----
-
-    // ---- Also upsert a minimal record for the UI (Business Name | Phone Number | Call Status) ----
-    const customerNumber =
-      direction === "outbound" ? toNum ?? fromNum : fromNum ?? toNum;
-    
-    console.log("Customer number (selected):", customerNumber);
-    
-    const minimal = {
-      call_id: String(callId),
-      business_name: String(businessName),
-      phone_number: customerNumber ?? null,
-      call_status: status ?? null,
-    };
-    
-    console.log("=== SAVING TO DATABASE ===");
-    console.log("Minimal record:", JSON.stringify(minimal, null, 2));
-    
-    const { error: simpleErr } = await supabase
-      .from("simple_calls")
-      .upsert(minimal, { onConflict: "call_id" });
-    
-    if (simpleErr) {
-      console.error("simple_calls upsert ERROR:", simpleErr);
-    } else {
-      console.log("✓ Successfully saved to simple_calls");
-    }
-
-    // ---- Store full payload in call_events for auditing/UI (type=call_analyzed) ----
+    // ---- Store full payload in call_events first (always for call_analyzed) ----
+    let resolvedBusinessId: string | null = null;
     if (event === "call_analyzed") {
+      // Get first business for business_id (one-account mode)
+      const { data: firstBiz } = await supabase
+        .from("businesses")
+        .select("id")
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      resolvedBusinessId = firstBiz?.id ?? null;
+
       const { error: evtErr } = await supabase.from("call_events").insert({
         call_id: callId,
-        business_id: null,
+        business_id: resolvedBusinessId,
         type: "call_analyzed",
         data: body,
         occurred_at: new Date(),
@@ -189,6 +174,64 @@ export async function POST(req: Request) {
         console.error("call_events insert ERROR:", evtErr);
       } else {
         console.log("✓ Stored call_analyzed in call_events");
+      }
+    }
+
+    // ---- Extract and upsert into simplified calls table ----
+    const customerNumber =
+      direction === "outbound" ? toNum ?? fromNum : fromNum ?? toNum;
+
+    if (!customerNumber) {
+      console.log(
+        "⚠ No customer number extracted, skipping calls table upsert"
+      );
+    } else {
+      console.log("Customer number (selected):", customerNumber);
+
+      // Get business_id if we haven't already (reuse from above or fetch)
+      if (!resolvedBusinessId) {
+        const { data: firstBiz } = await supabase
+          .from("businesses")
+          .select("id")
+          .order("created_at", { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        resolvedBusinessId = firstBiz?.id ?? null;
+      }
+
+      const callStatus = call.disconnection_reason ?? status ?? null;
+      const callDate =
+        toDate(call.start_timestamp ?? call.started_at) ?? new Date();
+
+      console.log("=== UPSERTING TO CALLS TABLE ===");
+      console.log({
+        business_id: resolvedBusinessId,
+        business_name: businessName,
+        phone: customerNumber,
+        status: callStatus,
+        date: callDate.toISOString(),
+      });
+
+      // Upsert by phone number (unique constraint: business_id + phone)
+      // If same number calls again, UPDATE date and status
+      const { error: callsErr } = await supabase.from("calls").upsert(
+        {
+          business_id: resolvedBusinessId,
+          business_name: businessName,
+          phone: customerNumber,
+          status: callStatus,
+          date: callDate.toISOString(),
+        },
+        {
+          onConflict: "business_id,phone",
+          ignoreDuplicates: false,
+        }
+      );
+
+      if (callsErr) {
+        console.error("calls upsert ERROR:", callsErr);
+      } else {
+        console.log("✓ Successfully upserted to calls table");
       }
     }
 

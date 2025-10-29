@@ -8,24 +8,14 @@ import { Spinner } from "@/components/ui/spinner";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 
-type EventRow = {
-  call_id: string;
-  occurred_at: string;
-  data: Record<string, unknown>;
+type CallRow = {
+  id: string;
+  business_name: string;
+  phone: string;
+  status: string | null;
+  date: string;
+  inbound: unknown[];
 };
-
-type RetellCallMinimal = {
-  retell_llm_dynamic_variables?: Record<string, unknown>;
-  dynamic_variables?: Record<string, unknown>;
-  metadata?: Record<string, unknown>;
-  direction?: string;
-  from_number?: string;
-  from?: string;
-  to_number?: string;
-  to?: string;
-  disconnection_reason?: string;
-};
-type RetellEnvelope = { call?: RetellCallMinimal };
 
 function CallsContent() {
   const [calls, setCalls] = useState<
@@ -45,10 +35,9 @@ function CallsContent() {
     async function fetchCalls() {
       try {
         const query = supabase
-          .from("call_events")
-          .select("call_id,occurred_at,data")
-          .eq("type", "call_analyzed")
-          .order("occurred_at", { ascending: false })
+          .from("calls")
+          .select("id,business_name,phone,status,date")
+          .order("date", { ascending: false })
           .limit(100);
         // Client-side filter applied after fetch
         const { data, error } = await query;
@@ -56,36 +45,14 @@ function CallsContent() {
         if (error) {
           console.error("Error fetching calls:", error);
         } else {
-          const rows = (data as EventRow[] | null) ?? [];
-          const mapped = rows.map((r) => {
-            const call =
-              (r.data as RetellEnvelope)?.call ?? ({} as RetellCallMinimal);
-            const dv =
-              call.retell_llm_dynamic_variables || call.dynamic_variables || {};
-            const meta = call.metadata || {};
-            const business = String(
-              dv.business_name ||
-                dv.business ||
-                dv.company_name ||
-                meta.business_name ||
-                meta.business ||
-                meta.company_name ||
-                "Unknown"
-            );
-            const dir = String(call.direction || "").toLowerCase();
-            const fromNum = call.from_number || call.from || null;
-            const toNum = call.to_number || call.to || null;
-            const phone =
-              dir === "outbound" ? toNum || fromNum : fromNum || toNum;
-            const status = call.disconnection_reason || null;
-            return {
-              call_id: r.call_id,
-              business,
-              phone: phone ?? null,
-              status,
-              date: r.occurred_at,
-            };
-          });
+          const rows = (data as CallRow[] | null) ?? [];
+          const mapped = rows.map((r) => ({
+            call_id: r.id,
+            business: r.business_name,
+            phone: r.phone ?? null,
+            status: r.status,
+            date: r.date,
+          }));
           // simple client-side search
           const filtered = q.trim()
             ? mapped.filter(
@@ -111,10 +78,10 @@ function CallsContent() {
 
     // Set up real-time subscription
     const channel = supabase
-      .channel("call-events-realtime")
+      .channel("calls-realtime")
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "call_events" },
+        { event: "*", schema: "public", table: "calls" },
         () => {
           fetchCalls();
         }
@@ -131,44 +98,21 @@ function CallsContent() {
       setLoading(true);
       try {
         const query = supabase
-          .from("call_events")
-          .select("call_id,occurred_at,data")
-          .eq("type", "call_analyzed")
-          .order("occurred_at", { ascending: false })
+          .from("calls")
+          .select("id,business_name,phone,status,date")
+          .order("date", { ascending: false })
           .limit(100);
         // filtering done client-side
         const { data, error } = await query;
         if (!error) {
-          const rows = (data as EventRow[] | null) ?? [];
-          const mapped = rows.map((r) => {
-            const call =
-              (r.data as RetellEnvelope)?.call ?? ({} as RetellCallMinimal);
-            const dv =
-              call.retell_llm_dynamic_variables || call.dynamic_variables || {};
-            const meta = call.metadata || {};
-            const business = String(
-              dv.business_name ||
-                dv.business ||
-                dv.company_name ||
-                meta.business_name ||
-                meta.business ||
-                meta.company_name ||
-                "Unknown"
-            );
-            const dir = String(call.direction || "").toLowerCase();
-            const fromNum = call.from_number || call.from || null;
-            const toNum = call.to_number || call.to || null;
-            const phone =
-              dir === "outbound" ? toNum || fromNum : fromNum || toNum;
-            const status = call.disconnection_reason || null;
-            return {
-              call_id: r.call_id,
-              business,
-              phone: phone ?? null,
-              status,
-              date: r.occurred_at,
-            };
-          });
+          const rows = (data as CallRow[] | null) ?? [];
+          const mapped = rows.map((r) => ({
+            call_id: r.id,
+            business: r.business_name,
+            phone: r.phone ?? null,
+            status: r.status,
+            date: r.date,
+          }));
           const filtered = q.trim()
             ? mapped.filter(
                 (m) =>

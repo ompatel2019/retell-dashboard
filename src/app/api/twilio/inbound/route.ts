@@ -29,35 +29,58 @@ export async function POST(req: Request) {
 
     const supabase = createServiceRoleClient();
 
-    // Find the most recent call involving this phone number
+    // Find call by phone number in simplified calls table
     const { data: call } = await supabase
       .from("calls")
-      .select("id,business_id,from_number,to_number,started_at")
-      .or(`from_number.eq.${from},to_number.eq.${from}`)
-      .order("started_at", { ascending: false })
+      .select("id,business_id,phone,inbound")
+      .eq("phone", from)
+      .order("date", { ascending: false })
       .limit(1)
       .maybeSingle();
-    console.log("[inbound] resolved call", call ?? null);
+    console.log("[inbound] resolved call by phone", call ?? null);
 
     if (!call) {
-      // No call to associate with; reply 200 OK with empty TwiML to satisfy Twilio
-      console.warn("[inbound] no matching call found for from:", from);
+      // No call found for this phone number; still store in call_events for auditing
+      console.warn("[inbound] no matching call found for phone:", from);
+      
+      // Still store the inbound SMS in call_events for reference
+      const entry = {
+        from,
+        to,
+        body,
+        at: new Date().toISOString(),
+        provider,
+      };
+      
+      // Get first business for business_id
+      const { data: firstBiz } = await supabase
+        .from("businesses")
+        .select("id")
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      const { error: insertErr } = await supabase.from("call_events").insert({
+        call_id: null,
+        business_id: firstBiz?.id ?? null,
+        type: "inbound_sms_no_call_match",
+        data: { note: "SMS received but no matching call found", phone: from },
+        inbound: [entry],
+      });
+      
+      if (insertErr) {
+        console.error("[inbound] error inserting orphaned inbound SMS", insertErr);
+      } else {
+        console.log("[inbound] stored orphaned inbound SMS in call_events");
+      }
+
       return new NextResponse(
         '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
         { status: 200, headers: { "Content-Type": "text/xml" } }
       );
     }
 
-    // Try to read latest call_events for this call to append inbound array
-    const { data: latestEvent } = await supabase
-      .from("call_events")
-      .select("id,inbound")
-      .eq("call_id", call.id)
-      .order("occurred_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    console.log("[inbound] latest call_event", latestEvent ?? null);
-
+    // Append to inbound array in calls table
     const entry = {
       from,
       to,
@@ -66,36 +89,35 @@ export async function POST(req: Request) {
       provider,
     };
 
-    if (latestEvent) {
-      // Append to existing inbound array in JS and update
-      const inbound = Array.isArray(latestEvent.inbound)
-        ? [...latestEvent.inbound, entry]
-        : [entry];
-      console.log("[inbound] updating existing call_event with inbound count", inbound.length);
-      const { error: updateErr } = await supabase
-        .from("call_events")
-        .update({ inbound })
-        .eq("id", latestEvent.id);
-      if (updateErr) {
-        console.error("[inbound] error updating call_event", updateErr);
-      } else {
-        console.log("[inbound] call_event updated", latestEvent.id);
-      }
+    const inbound = Array.isArray(call.inbound)
+      ? [...call.inbound, entry]
+      : [entry];
+
+    console.log("[inbound] updating calls table with inbound count", inbound.length);
+    const { error: updateErr } = await supabase
+      .from("calls")
+      .update({ inbound })
+      .eq("id", call.id);
+
+    if (updateErr) {
+      console.error("[inbound] error updating calls table", updateErr);
     } else {
-      // Create a fresh call_event row with inbound initialized
-      console.log("[inbound] creating new call_event with first inbound entry");
-      const { error: insertErr } = await supabase.from("call_events").insert({
-        call_id: call.id,
-        business_id: call.business_id,
-        type: "inbound_sms_log",
-        data: { note: "created by /api/twilio/inbound" },
-        inbound: [entry],
-      });
-      if (insertErr) {
-        console.error("[inbound] error inserting call_event", insertErr);
-      } else {
-        console.log("[inbound] new call_event inserted for call", call.id);
-      }
+      console.log("[inbound] calls table updated with new inbound SMS", call.id);
+    }
+
+    // Also store in call_events for full audit trail
+    const { error: evtErr } = await supabase.from("call_events").insert({
+      call_id: null,
+      business_id: call.business_id,
+      type: "inbound_sms",
+      data: { note: "inbound SMS appended to calls table", phone: from },
+      inbound: [entry],
+    });
+    
+    if (evtErr) {
+      console.error("[inbound] error inserting call_event (non-fatal)", evtErr);
+    } else {
+      console.log("[inbound] also stored in call_events for audit");
     }
 
     console.log("[inbound] responding with empty TwiML");
