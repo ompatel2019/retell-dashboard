@@ -29,10 +29,19 @@ do $$ begin
   end if;
 end $$;
 
--- RLS to allow reads if needed (optional; currently no auth checks here)
+-- RLS to allow reads for authenticated users
 alter table public.simple_calls enable row level security;
 drop policy if exists "read all simple_calls (service only)" on public.simple_calls;
-create policy "read all simple_calls (service only)" on public.simple_calls
+drop policy if exists "read_simple_calls" on public.simple_calls;
+create policy "read_simple_calls" on public.simple_calls
 for select using (true);
+
+-- Allow service role to insert
+create policy "service_insert_simple_calls" on public.simple_calls
+for insert with check (true);
+
+-- Allow service role to update (for upserts)
+create policy "service_update_simple_calls" on public.simple_calls
+for update using (true);
 
 

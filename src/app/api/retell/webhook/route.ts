@@ -76,13 +76,23 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  console.log("Webhook POST received:", req.url);
+  console.log("=== WEBHOOK POST RECEIVED ===");
+  console.log("URL:", req.url);
+  console.log("Timestamp:", new Date().toISOString());
 
   try {
     const supabase = createServiceRoleClient();
     const body = await req.json();
+    
+    console.log("=== FULL WEBHOOK BODY ===");
+    console.log(JSON.stringify(body, null, 2));
+    
     const event: string = body?.event ?? "call_event";
     const call: RetellCall = body?.call ?? {};
+    
+    console.log("=== PARSED VALUES ===");
+    console.log("Event:", event);
+    console.log("Call object keys:", Object.keys(call));
 
     // ---- Identify call and basic fields ----
     const callId = call.call_id ?? call.id;
@@ -91,13 +101,25 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true });
     }
 
+    console.log("Call ID:", callId);
+
     // fixed agent id kept for potential auditing, not needed for storage
     const fromNum = call.from_number ?? call.from ?? null;
     const toNum = call.to_number ?? call.to ?? null;
 
+    console.log("From number:", fromNum);
+    console.log("To number:", toNum);
+    console.log("Direction raw:", call.direction);
+
     const ended_at = toDate(call.end_timestamp ?? call.ended_at) ?? null;
+    console.log("Ended at:", ended_at);
+    console.log("Disconnection reason:", call.disconnection_reason);
 
     // ---- One-account mode: business name comes from webhook payload only ----
+    console.log("=== EXTRACTING BUSINESS NAME ===");
+    console.log("dynamic_variables:", JSON.stringify(call.dynamic_variables, null, 2));
+    console.log("metadata:", JSON.stringify(call.metadata, null, 2));
+    
     const businessName =
       (call.dynamic_variables?.business_name as string) ??
       (call.metadata?.business_name as string) ??
@@ -107,8 +129,12 @@ export async function POST(req: Request) {
       (call.metadata?.company_name as string) ??
       "Unknown";
 
+    console.log("Extracted business name:", businessName);
+
     // ---- Normalize values ----
     const direction = normalizeDirection(call.direction);
+    console.log("Normalized direction:", direction);
+    
     let status =
       event === "call_started" || event === "call_ended"
         ? mapStatus(ended_at, call.disconnection_reason ?? null)
@@ -118,6 +144,8 @@ export async function POST(req: Request) {
       if (!status) status = "completed";
     }
 
+    console.log("Call status:", status);
+
     // no transcript/summary/audio needed for simple storage
 
     // ---- Skip heavy storage; just store the minimal fields required ----
@@ -125,19 +153,47 @@ export async function POST(req: Request) {
     // ---- Also upsert a minimal record for the UI (Business Name | Phone Number | Call Status) ----
     const customerNumber =
       direction === "outbound" ? toNum ?? fromNum : fromNum ?? toNum;
+    
+    console.log("Customer number (selected):", customerNumber);
+    
     const minimal = {
       call_id: String(callId),
       business_name: String(businessName),
       phone_number: customerNumber ?? null,
       call_status: status ?? null,
     };
+    
+    console.log("=== SAVING TO DATABASE ===");
+    console.log("Minimal record:", JSON.stringify(minimal, null, 2));
+    
     const { error: simpleErr } = await supabase
       .from("simple_calls")
       .upsert(minimal, { onConflict: "call_id" });
-    if (simpleErr)
-      console.warn("simple_calls upsert warn", simpleErr, { callId, event });
+    
+    if (simpleErr) {
+      console.error("simple_calls upsert ERROR:", simpleErr);
+    } else {
+      console.log("✓ Successfully saved to simple_calls");
+    }
+
+    // ---- Store full payload in call_events for auditing/UI (type=call_analyzed) ----
+    if (event === "call_analyzed") {
+      const { error: evtErr } = await supabase.from("call_events").insert({
+        call_id: callId,
+        business_id: null,
+        type: "call_analyzed",
+        data: body,
+        occurred_at: new Date(),
+      });
+      if (evtErr) {
+        console.error("call_events insert ERROR:", evtErr);
+      } else {
+        console.log("✓ Stored call_analyzed in call_events");
+      }
+    }
 
     // ---- Done ----
+    console.log("=== WEBHOOK PROCESSING COMPLETE ===\n");
 
     return NextResponse.json({ ok: true });
   } catch (err) {
