@@ -32,7 +32,7 @@ export async function POST(req: Request) {
     // Find call by phone number in simplified calls table
     const { data: call } = await supabase
       .from("calls")
-      .select("id,business_id,phone,inbound")
+      .select("id,phone,inbound")
       .eq("phone", from)
       .order("date", { ascending: false })
       .limit(1)
@@ -51,18 +51,9 @@ export async function POST(req: Request) {
         at: new Date().toISOString(),
         provider,
       };
-      
-      // Get first business for business_id
-      const { data: firstBiz } = await supabase
-        .from("businesses")
-        .select("id")
-        .order("created_at", { ascending: true })
-        .limit(1)
-        .maybeSingle();
 
       const { error: insertErr } = await supabase.from("call_events").insert({
         call_id: null,
-        business_id: firstBiz?.id ?? null,
         type: "inbound_sms_no_call_match",
         data: { note: "SMS received but no matching call found", phone: from },
         inbound: [entry],
@@ -108,7 +99,6 @@ export async function POST(req: Request) {
     // Also store in call_events for full audit trail
     const { error: evtErr } = await supabase.from("call_events").insert({
       call_id: null,
-      business_id: call.business_id,
       type: "inbound_sms",
       data: { note: "inbound SMS appended to calls table", phone: from },
       inbound: [entry],

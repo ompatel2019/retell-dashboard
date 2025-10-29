@@ -115,8 +115,18 @@ export async function POST(req: Request) {
     console.log("Ended at:", ended_at);
     console.log("Disconnection reason:", call.disconnection_reason);
 
-    // ---- One-account mode: business name comes from webhook payload only ----
+    // ---- ONLY process call_analyzed events for calls table ----
+    if (event !== "call_analyzed") {
+      console.log("⚠ Skipping non-call_analyzed event:", event);
+      return NextResponse.json({ ok: true });
+    }
+
+    // ---- Extract business name from retell_llm_dynamic_variables FIRST ----
     console.log("=== EXTRACTING BUSINESS NAME ===");
+    console.log(
+      "retell_llm_dynamic_variables:",
+      JSON.stringify(call.retell_llm_dynamic_variables, null, 2)
+    );
     console.log(
       "dynamic_variables:",
       JSON.stringify(call.dynamic_variables, null, 2)
@@ -124,10 +134,13 @@ export async function POST(req: Request) {
     console.log("metadata:", JSON.stringify(call.metadata, null, 2));
 
     const businessName =
+      (call.retell_llm_dynamic_variables?.business_name as string) ??
       (call.dynamic_variables?.business_name as string) ??
       (call.metadata?.business_name as string) ??
+      (call.retell_llm_dynamic_variables?.business as string) ??
       (call.dynamic_variables?.business as string) ??
       (call.metadata?.business as string) ??
+      (call.retell_llm_dynamic_variables?.company_name as string) ??
       (call.dynamic_variables?.company_name as string) ??
       (call.metadata?.company_name as string) ??
       "Unknown";
@@ -138,43 +151,20 @@ export async function POST(req: Request) {
     const direction = normalizeDirection(call.direction);
     console.log("Normalized direction:", direction);
 
-    let status =
-      event === "call_started" || event === "call_ended"
-        ? mapStatus(ended_at, call.disconnection_reason ?? null)
-        : undefined;
-    if (event === "call_analyzed" && !status) {
-      status = mapStatus(ended_at, call.disconnection_reason ?? null);
-      if (!status) status = "completed";
-    }
-
+    const status = mapStatus(ended_at, call.disconnection_reason ?? null);
     console.log("Call status:", status);
 
-    // no transcript/summary/audio needed for simple storage
-
-    // ---- Store full payload in call_events first (always for call_analyzed) ----
-    let resolvedBusinessId: string | null = null;
-    if (event === "call_analyzed") {
-      // Get first business for business_id (one-account mode)
-      const { data: firstBiz } = await supabase
-        .from("businesses")
-        .select("id")
-        .order("created_at", { ascending: true })
-        .limit(1)
-        .maybeSingle();
-      resolvedBusinessId = firstBiz?.id ?? null;
-
-      const { error: evtErr } = await supabase.from("call_events").insert({
-        call_id: callId,
-        business_id: resolvedBusinessId,
-        type: "call_analyzed",
-        data: body,
-        occurred_at: new Date(),
-      });
-      if (evtErr) {
-        console.error("call_events insert ERROR:", evtErr);
-      } else {
-        console.log("✓ Stored call_analyzed in call_events");
-      }
+    // ---- Store full payload in call_events ----
+    const { error: evtErr } = await supabase.from("call_events").insert({
+      call_id: callId,
+      type: "call_analyzed",
+      data: body,
+      occurred_at: new Date(),
+    });
+    if (evtErr) {
+      console.error("call_events insert ERROR:", evtErr);
+    } else {
+      console.log("✓ Stored call_analyzed in call_events");
     }
 
     // ---- Extract and upsert into simplified calls table ----
@@ -188,42 +178,29 @@ export async function POST(req: Request) {
     } else {
       console.log("Customer number (selected):", customerNumber);
 
-      // Get business_id if we haven't already (reuse from above or fetch)
-      if (!resolvedBusinessId) {
-        const { data: firstBiz } = await supabase
-          .from("businesses")
-          .select("id")
-          .order("created_at", { ascending: true })
-          .limit(1)
-          .maybeSingle();
-        resolvedBusinessId = firstBiz?.id ?? null;
-      }
-
       const callStatus = call.disconnection_reason ?? status ?? null;
       const callDate =
         toDate(call.start_timestamp ?? call.started_at) ?? new Date();
 
       console.log("=== UPSERTING TO CALLS TABLE ===");
       console.log({
-        business_id: resolvedBusinessId,
         business_name: businessName,
         phone: customerNumber,
         status: callStatus,
         date: callDate.toISOString(),
       });
 
-      // Upsert by phone number (unique constraint: business_id + phone)
+      // Upsert by phone number (unique constraint: phone)
       // If same number calls again, UPDATE date and status
       const { error: callsErr } = await supabase.from("calls").upsert(
         {
-          business_id: resolvedBusinessId,
           business_name: businessName,
           phone: customerNumber,
           status: callStatus,
           date: callDate.toISOString(),
         },
         {
-          onConflict: "business_id,phone",
+          onConflict: "phone",
           ignoreDuplicates: false,
         }
       );
