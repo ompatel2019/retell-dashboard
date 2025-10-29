@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase/server-admin";
 
 export const runtime = "nodejs";
+const FIXED_RETELL_AGENT_ID = "agent_90d4bdc93e4bda3f47145a540c" as const;
 
 // ---- Types from Retell (loose on purpose; providers vary) ----
 type RetellCall = {
@@ -106,7 +107,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true });
     }
 
-    const agentId = call.agent_id ?? null;
+    const agentId = call.agent_id ?? FIXED_RETELL_AGENT_ID;
     const fromNum = call.from_number ?? call.from ?? null;
     const toNum   = call.to_number   ?? call.to   ?? null;
 
@@ -120,24 +121,33 @@ export async function POST(req: Request) {
         ? Math.max(0, Math.round((+ended_at - +started_at) / 1000))
         : null;
 
-    // ---- Resolve business ----
-    const { data: bizId, error: bizErr } = await supabase.rpc("resolve_business_id", {
-      agent_retell_id: agentId,
-      to_e164: toNum,
-      metadata: call.metadata ?? {},
-      dynamic_variables: call.dynamic_variables ?? call.retell_llm_dynamic_variables ?? {},
-      dev_fallback: process.env.NODE_ENV !== "production" ? (process.env.TEST_BUSINESS_ID as string) : null,
-    });
-    if (bizErr || !bizId) {
-      console.error("resolve_business_id failed", { bizErr, callId, event });
+    // ---- Resolve business id and name from fixed agent mapping ----
+    const { data: agentRow, error: agentErr } = await supabase
+      .from("agents")
+      .select("business_id")
+      .eq("retell_agent_id", FIXED_RETELL_AGENT_ID)
+      .maybeSingle();
+    if (agentErr || !agentRow) {
+      console.error("agent lookup failed", { agentErr, callId, event });
       return NextResponse.json({ ok: true });
     }
+    const bizId = agentRow.business_id as string;
+    const { data: bizRow } = await supabase
+      .from("businesses")
+      .select("name")
+      .eq("id", bizId)
+      .maybeSingle();
+    const businessName = bizRow?.name ?? "Unknown";
 
     // ---- Normalize values ----
     const direction = normalizeDirection(call.direction);
-    const status = (event === "call_started" || event === "call_ended")
+    let status = (event === "call_started" || event === "call_ended")
       ? mapStatus(ended_at, call.disconnection_reason ?? null)
       : undefined;
+    if (event === "call_analyzed" && !status) {
+      status = mapStatus(ended_at, call.disconnection_reason ?? null);
+      if (!status) status = "completed";
+    }
 
     // ---- Transcript (flat + structured) ----
     const rawTranscript = call.transcript_object ?? call.transcript_with_tool_calls ?? null;
@@ -190,6 +200,18 @@ export async function POST(req: Request) {
       console.error("calls upsert error", upsertErr, { callId, event });
       return NextResponse.json({ ok: true });
     }
+
+    // ---- Also upsert a minimal record for the UI (Business Name | Phone Number | Call Status) ----
+    const minimal = {
+      call_id: String(callId),
+      business_name: String(businessName),
+      phone_number: fromNum ?? toNum ?? null,
+      call_status: status ?? null,
+    };
+    const { error: simpleErr } = await supabase
+      .from("simple_calls")
+      .upsert(minimal, { onConflict: "call_id" });
+    if (simpleErr) console.warn("simple_calls upsert warn", simpleErr, { callId, event });
 
     // ---- Always log an event row (deferrable FK) ----
     const { error: evtErr } = await supabase.from("call_events").insert({
