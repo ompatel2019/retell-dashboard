@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { Sidebar } from "./sidebar";
 import { Header } from "./header";
-import { useBusinessContext } from "@/lib/user/BusinessContext";
 import {
   Dialog,
   DialogContent,
@@ -19,7 +18,6 @@ interface DashboardLayoutProps {
 
 export function DashboardLayout({ children }: DashboardLayoutProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const { businessData, loading } = useBusinessContext();
   const shouldBlock = false;
 
   const toggleSidebar = () => {

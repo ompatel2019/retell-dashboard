@@ -15,15 +15,15 @@ type RetellCall = {
   to?: string;
   to_number?: string;
   direction?: string; // inbound | outbound
-  start_timestamp?: number;    // ms epoch
-  end_timestamp?: number;      // ms epoch
+  start_timestamp?: number; // ms epoch
+  end_timestamp?: number; // ms epoch
   started_at?: string | number;
   ended_at?: string | number;
   disconnection_reason?: string;
 
   transcript?: string;
-  transcript_object?: unknown;             // array-ish
-  transcript_with_tool_calls?: unknown;    // array-ish
+  transcript_object?: unknown; // array-ish
+  transcript_with_tool_calls?: unknown; // array-ish
 
   summary?: string;
   call_analysis?: { summary?: string } | null;
@@ -55,10 +55,18 @@ function normalizeDirection(d?: string | null): "inbound" | "outbound" | null {
   return null;
 }
 
-function mapStatus(endedAt: Date | null, reason: string | null): "in_progress" | "completed" | "missed" | "failed" {
+function mapStatus(
+  endedAt: Date | null,
+  reason: string | null
+): "in_progress" | "completed" | "missed" | "failed" {
   if (!endedAt) return "in_progress";
   const r = (reason ?? "").toLowerCase();
-  if (r.includes("no_answer") || r.includes("busy") || r.includes("dial_no_answer")) return "missed";
+  if (
+    r.includes("no_answer") ||
+    r.includes("busy") ||
+    r.includes("dial_no_answer")
+  )
+    return "missed";
   if (r.includes("error") || r.includes("fail")) return "failed";
   return "completed";
 }
@@ -69,9 +77,9 @@ function toTranscriptJson(raw: unknown): TranscriptSeg[] | null {
   const out: TranscriptSeg[] = [];
   for (const seg of raw as Array<Record<string, unknown>>) {
     if (!seg) continue;
-    const speaker = String((seg["speaker"] ?? seg["role"] ?? "")).toLowerCase();
+    const speaker = String(seg["speaker"] ?? seg["role"] ?? "").toLowerCase();
     const role: "agent" | "user" = speaker.includes("agent") ? "agent" : "user";
-    const text = String((seg["text"] ?? seg["content"] ?? "")).trim();
+    const text = String(seg["text"] ?? seg["content"] ?? "").trim();
     if (!text) continue;
     let ts: number | undefined;
     const startMs = seg["start_ms"];
@@ -86,13 +94,13 @@ function toTranscriptJson(raw: unknown): TranscriptSeg[] | null {
 }
 
 export async function GET() {
-  console.log('Webhook GET received:', new Date().toISOString());
+  console.log("Webhook GET received:", new Date().toISOString());
   return NextResponse.json({ message: "Webhook endpoint is working" });
 }
 
 export async function POST(req: Request) {
-  console.log('Webhook POST received:', req.url);
-  
+  console.log("Webhook POST received:", req.url);
+
   const supabase = createServiceRoleClient();
 
   try {
@@ -109,12 +117,10 @@ export async function POST(req: Request) {
 
     const agentId = call.agent_id ?? FIXED_RETELL_AGENT_ID;
     const fromNum = call.from_number ?? call.from ?? null;
-    const toNum   = call.to_number   ?? call.to   ?? null;
+    const toNum = call.to_number ?? call.to ?? null;
 
-    const started_at =
-      toDate(call.start_timestamp ?? call.started_at) ?? null;
-    const ended_at =
-      toDate(call.end_timestamp ?? call.ended_at) ?? null;
+    const started_at = toDate(call.start_timestamp ?? call.started_at) ?? null;
+    const ended_at = toDate(call.end_timestamp ?? call.ended_at) ?? null;
 
     const duration_seconds =
       started_at && ended_at
@@ -122,14 +128,60 @@ export async function POST(req: Request) {
         : null;
 
     // ---- Resolve business id and name from fixed agent mapping ----
-    const { data: agentRow, error: agentErr } = await supabase
+    let { data: agentRow, error: agentErr } = await supabase
       .from("agents")
       .select("business_id")
       .eq("retell_agent_id", FIXED_RETELL_AGENT_ID)
       .maybeSingle();
-    if (agentErr || !agentRow) {
-      console.error("agent lookup failed", { agentErr, callId, event });
-      return NextResponse.json({ ok: true });
+    if (!agentRow) {
+      // Auto-create mapping to the first business if none exists yet
+      const { data: firstBiz, error: bizListErr } = await supabase
+        .from("businesses")
+        .select("id")
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (bizListErr || !firstBiz) {
+        console.error("agent lookup failed and no business found", {
+          agentErr,
+          bizListErr,
+          callId,
+          event,
+        });
+        return NextResponse.json({ ok: true });
+      }
+      const { error: insertAgentErr } = await supabase.from("agents").upsert(
+        {
+          business_id: firstBiz.id,
+          retell_agent_id: FIXED_RETELL_AGENT_ID,
+          display_name: "Retell Agent",
+        },
+        { onConflict: "retell_agent_id" }
+      );
+      if (insertAgentErr) {
+        console.error("failed to create agent mapping", {
+          insertAgentErr,
+          callId,
+          event,
+        });
+        return NextResponse.json({ ok: true });
+      }
+      // Re-query after upsert
+      const requery = await supabase
+        .from("agents")
+        .select("business_id")
+        .eq("retell_agent_id", FIXED_RETELL_AGENT_ID)
+        .maybeSingle();
+      agentRow = requery.data ?? null;
+      agentErr = requery.error ?? null;
+      if (!agentRow) {
+        console.error("agent mapping still missing after upsert", {
+          agentErr,
+          callId,
+          event,
+        });
+        return NextResponse.json({ ok: true });
+      }
     }
     const bizId = agentRow.business_id as string;
     const { data: bizRow } = await supabase
@@ -141,16 +193,18 @@ export async function POST(req: Request) {
 
     // ---- Normalize values ----
     const direction = normalizeDirection(call.direction);
-    let status = (event === "call_started" || event === "call_ended")
-      ? mapStatus(ended_at, call.disconnection_reason ?? null)
-      : undefined;
+    let status =
+      event === "call_started" || event === "call_ended"
+        ? mapStatus(ended_at, call.disconnection_reason ?? null)
+        : undefined;
     if (event === "call_analyzed" && !status) {
       status = mapStatus(ended_at, call.disconnection_reason ?? null);
       if (!status) status = "completed";
     }
 
     // ---- Transcript (flat + structured) ----
-    const rawTranscript = call.transcript_object ?? call.transcript_with_tool_calls ?? null;
+    const rawTranscript =
+      call.transcript_object ?? call.transcript_with_tool_calls ?? null;
     const segments = toTranscriptJson(rawTranscript);
 
     // ---- Summary (post-call analysis may arrive later) ----
@@ -167,19 +221,24 @@ export async function POST(req: Request) {
 
     if (agentId) payload.agent_id = agentId;
     if (fromNum) payload.from_number = fromNum;
-    if (toNum)   payload.to_number = toNum;
+    if (toNum) payload.to_number = toNum;
     if (direction) payload.direction = direction;
 
     if (started_at) payload.started_at = started_at;
-    if (ended_at)   payload.ended_at = ended_at;
-    if (typeof duration_seconds === "number") payload.duration_seconds = duration_seconds;
+    if (ended_at) payload.ended_at = ended_at;
+    if (typeof duration_seconds === "number")
+      payload.duration_seconds = duration_seconds;
 
-    if (call.disconnection_reason) payload.disconnection_reason = call.disconnection_reason;
+    if (call.disconnection_reason)
+      payload.disconnection_reason = call.disconnection_reason;
 
     // Only set status from started/ended; do NOT overwrite on call_analyzed
     if (status) payload.status = status;
 
-    if (typeof call.transcript === "string" && call.transcript.trim().length > 0) {
+    if (
+      typeof call.transcript === "string" &&
+      call.transcript.trim().length > 0
+    ) {
       payload.transcript = call.transcript;
     }
     if (segments) payload.transcript_json = segments;
@@ -188,7 +247,8 @@ export async function POST(req: Request) {
 
     if (recordingUrl) payload.audio_url = recordingUrl;
 
-    const dyn = call.dynamic_variables ?? call.retell_llm_dynamic_variables ?? {};
+    const dyn =
+      call.dynamic_variables ?? call.retell_llm_dynamic_variables ?? {};
     if (dyn && Object.keys(dyn).length > 0) payload.dynamic_variables = dyn;
 
     // ---- Upsert call FIRST (prevents FK race for events) ----
@@ -202,16 +262,19 @@ export async function POST(req: Request) {
     }
 
     // ---- Also upsert a minimal record for the UI (Business Name | Phone Number | Call Status) ----
+    const customerNumber =
+      direction === "outbound" ? toNum ?? fromNum : fromNum ?? toNum;
     const minimal = {
       call_id: String(callId),
       business_name: String(businessName),
-      phone_number: fromNum ?? toNum ?? null,
+      phone_number: customerNumber ?? null,
       call_status: status ?? null,
     };
     const { error: simpleErr } = await supabase
       .from("simple_calls")
       .upsert(minimal, { onConflict: "call_id" });
-    if (simpleErr) console.warn("simple_calls upsert warn", simpleErr, { callId, event });
+    if (simpleErr)
+      console.warn("simple_calls upsert warn", simpleErr, { callId, event });
 
     // ---- Always log an event row (deferrable FK) ----
     const { error: evtErr } = await supabase.from("call_events").insert({
@@ -221,7 +284,8 @@ export async function POST(req: Request) {
       data: body,
       occurred_at: new Date(),
     });
-    if (evtErr) console.warn("call_events insert warn", evtErr, { callId, event });
+    if (evtErr)
+      console.warn("call_events insert warn", evtErr, { callId, event });
 
     return NextResponse.json({ ok: true });
   } catch (err) {
@@ -229,7 +293,7 @@ export async function POST(req: Request) {
     console.error("Webhook request details:", {
       url: req.url,
       method: req.method,
-      headers: Object.fromEntries(req.headers.entries())
+      headers: Object.fromEntries(req.headers.entries()),
     });
     // Return 2xx so provider doesn't retry-spam; your logs will capture details
     return NextResponse.json({ ok: true });
