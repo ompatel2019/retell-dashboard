@@ -5,6 +5,8 @@ import { DashboardLayout } from "@/components/ui/dashboard-layout";
 import { BusinessProviderWrapper } from "@/components/providers/BusinessProviderWrapper";
 import { createClient } from "@/lib/supabase/client";
 import { Spinner } from "@/components/ui/spinner";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 
 type EventRow = {
   call_id: string;
@@ -26,13 +28,15 @@ type RetellCallMinimal = {
 type RetellEnvelope = { call?: RetellCallMinimal };
 
 function CallsContent() {
-  const [calls, setCalls] = useState<{
-    call_id: string;
-    business: string;
-    phone: string | null;
-    status: string | null;
-    date: string;
-  }[]>([]);
+  const [calls, setCalls] = useState<
+    {
+      call_id: string;
+      business: string;
+      phone: string | null;
+      status: string | null;
+      date: string;
+    }[]
+  >([]);
   const [loading, setLoading] = useState(true);
   const supabase = createClient();
   const [q, setQ] = useState("");
@@ -54,16 +58,25 @@ function CallsContent() {
         } else {
           const rows = (data as EventRow[] | null) ?? [];
           const mapped = rows.map((r) => {
-            const call = (r.data as RetellEnvelope)?.call ?? {} as RetellCallMinimal;
-            const dv = call.retell_llm_dynamic_variables || call.dynamic_variables || {};
+            const call =
+              (r.data as RetellEnvelope)?.call ?? ({} as RetellCallMinimal);
+            const dv =
+              call.retell_llm_dynamic_variables || call.dynamic_variables || {};
             const meta = call.metadata || {};
             const business = String(
-              dv.business_name || dv.business || dv.company_name || meta.business_name || meta.business || meta.company_name || "Unknown"
+              dv.business_name ||
+                dv.business ||
+                dv.company_name ||
+                meta.business_name ||
+                meta.business ||
+                meta.company_name ||
+                "Unknown"
             );
             const dir = String(call.direction || "").toLowerCase();
             const fromNum = call.from_number || call.from || null;
             const toNum = call.to_number || call.to || null;
-            const phone = dir === "outbound" ? (toNum || fromNum) : (fromNum || toNum);
+            const phone =
+              dir === "outbound" ? toNum || fromNum : fromNum || toNum;
             const status = call.disconnection_reason || null;
             return {
               call_id: r.call_id,
@@ -75,9 +88,14 @@ function CallsContent() {
           });
           // simple client-side search
           const filtered = q.trim()
-            ? mapped.filter((m) =>
-                String(m.business || "").toLowerCase().includes(q.toLowerCase()) ||
-                String(m.phone || "").toLowerCase().includes(q.toLowerCase())
+            ? mapped.filter(
+                (m) =>
+                  String(m.business || "")
+                    .toLowerCase()
+                    .includes(q.toLowerCase()) ||
+                  String(m.phone || "")
+                    .toLowerCase()
+                    .includes(q.toLowerCase())
               )
             : mapped;
           setCalls(filtered);
@@ -123,23 +141,43 @@ function CallsContent() {
         if (!error) {
           const rows = (data as EventRow[] | null) ?? [];
           const mapped = rows.map((r) => {
-            const call = (r.data as RetellEnvelope)?.call ?? {} as RetellCallMinimal;
-            const dv = call.retell_llm_dynamic_variables || call.dynamic_variables || {};
+            const call =
+              (r.data as RetellEnvelope)?.call ?? ({} as RetellCallMinimal);
+            const dv =
+              call.retell_llm_dynamic_variables || call.dynamic_variables || {};
             const meta = call.metadata || {};
             const business = String(
-              dv.business_name || dv.business || dv.company_name || meta.business_name || meta.business || meta.company_name || "Unknown"
+              dv.business_name ||
+                dv.business ||
+                dv.company_name ||
+                meta.business_name ||
+                meta.business ||
+                meta.company_name ||
+                "Unknown"
             );
             const dir = String(call.direction || "").toLowerCase();
             const fromNum = call.from_number || call.from || null;
             const toNum = call.to_number || call.to || null;
-            const phone = dir === "outbound" ? (toNum || fromNum) : (fromNum || toNum);
+            const phone =
+              dir === "outbound" ? toNum || fromNum : fromNum || toNum;
             const status = call.disconnection_reason || null;
-            return { call_id: r.call_id, business, phone: phone ?? null, status, date: r.occurred_at };
+            return {
+              call_id: r.call_id,
+              business,
+              phone: phone ?? null,
+              status,
+              date: r.occurred_at,
+            };
           });
           const filtered = q.trim()
-            ? mapped.filter((m) =>
-                String(m.business || "").toLowerCase().includes(q.toLowerCase()) ||
-                String(m.phone || "").toLowerCase().includes(q.toLowerCase())
+            ? mapped.filter(
+                (m) =>
+                  String(m.business || "")
+                    .toLowerCase()
+                    .includes(q.toLowerCase()) ||
+                  String(m.phone || "")
+                    .toLowerCase()
+                    .includes(q.toLowerCase())
               )
             : mapped;
           setCalls(filtered);
@@ -201,29 +239,61 @@ function CallsContent() {
         ) : (
           <div className="bg-card rounded overflow-hidden text-sm">
             {/* Header Row */}
-            <div className="grid grid-cols-4 bg-muted h-11 items-center">
+            <div className="grid grid-cols-5 bg-muted h-11 items-center">
               <div className="px-3 font-medium">Business</div>
               <div className="px-3 font-medium">Phone</div>
               <div className="px-3 font-medium">Status</div>
               <div className="px-3 font-medium">Date</div>
+              <div className="px-3 font-medium">Actions</div>
             </div>
 
             {/* Data Rows */}
-            {calls.map((call) => (
-              <div
-                key={call.call_id}
-                className="grid grid-cols-4 h-12 border-b bg-card items-center"
-              >
-                <div className="px-3 truncate max-w-[260px]">
-                  {call.business}
+            {calls.map((call) => {
+              const showSmsButton =
+                call.status === "voicemail_reached" ||
+                call.status === "dial_no_answer";
+              return (
+                <div
+                  key={call.call_id}
+                  className="grid grid-cols-5 h-12 border-b bg-card items-center"
+                >
+                  <div className="px-3 truncate max-w-[260px]">
+                    {call.business}
+                  </div>
+                  <div className="px-3 truncate max-w-[200px]">
+                    {call.phone ?? "N/A"}
+                  </div>
+                  <div className="px-3 capitalize">{call.status ?? "-"}</div>
+                  <div className="px-3">{formatDate(call.date)}</div>
+                  <div className="px-3">
+                    {showSmsButton && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={async () => {
+                          if (!call.phone) return;
+                          try {
+                            const res = await fetch("/api/sms/send", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ phoneNumber: call.phone }),
+                            });
+                            if (!res.ok) {
+                              throw new Error("failed");
+                            }
+                            toast.success("SMS sent");
+                          } catch {
+                            toast.error("Failed to send SMS");
+                          }
+                        }}
+                      >
+                        Send SMS
+                      </Button>
+                    )}
+                  </div>
                 </div>
-                <div className="px-3 truncate max-w-[200px]">
-                  {call.phone ?? "N/A"}
-                </div>
-                <div className="px-3 capitalize">{call.status ?? "-"}</div>
-                <div className="px-3">{formatDate(call.date)}</div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
