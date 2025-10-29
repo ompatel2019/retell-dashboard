@@ -19,9 +19,9 @@ type SimpleCall = {
 function DashboardContent() {
   const [loading, setLoading] = useState(true);
   const [totalOutbound, setTotalOutbound] = useState<number>(0);
-  const [totalSmsSent] = useState<string>("-");
-  const [totalReplies] = useState<string>("-");
-  const [replyRate] = useState<string>("-");
+  const [totalSmsSent, setTotalSmsSent] = useState<number>(0);
+  const [totalReplies, setTotalReplies] = useState<number>(0);
+  const [replyRate, setReplyRate] = useState<string>("0%");
   const [recent, setRecent] = useState<SimpleCall[]>([]);
   const supabase = createClient();
 
@@ -39,6 +39,24 @@ function DashboardContent() {
           .order("date", { ascending: false })
           .limit(10);
         setRecent((data as SimpleCall[] | null) ?? []);
+
+        // Interactions metrics
+        const sentRes = await supabase
+          .from("interactions")
+          .select("id", { count: "exact", head: true })
+          .not("outbound", "is", null);
+        const repliesRes = await supabase
+          .from("interactions")
+          .select("id", { count: "exact", head: true })
+          .not("inbound", "is", null);
+
+        const sent = sentRes.count ?? 0;
+        const replies = repliesRes.count ?? 0;
+        setTotalSmsSent(sent);
+        setTotalReplies(replies);
+        setReplyRate(
+          sent > 0 ? `${Math.round((replies / sent) * 100)}%` : "0%"
+        );
       } finally {
         setLoading(false);
       }

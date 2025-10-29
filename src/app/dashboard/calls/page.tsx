@@ -6,6 +6,12 @@ import { createClient } from "@/lib/supabase/client";
 import { Spinner } from "@/components/ui/spinner";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 type CallRow = {
   id: string;
@@ -29,6 +35,24 @@ function CallsContent() {
   const [loading, setLoading] = useState(true);
   const supabase = createClient();
   const [q, setQ] = useState("");
+  const [phonesWithOutbound, setPhonesWithOutbound] = useState<Set<string>>(
+    new Set()
+  );
+  const [phonesWithReplies, setPhonesWithReplies] = useState<Set<string>>(
+    new Set()
+  );
+  const [modalOpen, setModalOpen] = useState(false);
+  const [selectedPhone, setSelectedPhone] = useState<string | null>(null);
+  const [interactions, setInteractions] = useState<
+    Array<{
+      id: string;
+      phone: string;
+      outbound: string | null;
+      inbound: string | null;
+      created_at: string;
+    }>
+  >([]);
+  const [loadingInteractions, setLoadingInteractions] = useState(false);
 
   useEffect(() => {
     async function fetchCalls() {
@@ -52,19 +76,68 @@ function CallsContent() {
             status: r.status,
             date: r.date,
           }));
-          // simple client-side search
+          // simple client-side search (business, phone, or status)
           const filtered = q.trim()
-            ? mapped.filter(
-                (m) =>
-                  String(m.business || "")
-                    .toLowerCase()
-                    .includes(q.toLowerCase()) ||
-                  String(m.phone || "")
-                    .toLowerCase()
-                    .includes(q.toLowerCase())
-              )
+            ? mapped.filter((m) => {
+                const ql = q.toLowerCase();
+                const business = String(m.business || "").toLowerCase();
+                const phone = String(m.phone || "").toLowerCase();
+                const rawStatus = String(m.status || "").toLowerCase();
+                const friendly = (() => {
+                  if (rawStatus === "voicemail_reached") return "voicemail";
+                  if (rawStatus === "agent_hungup") return "agent hungup";
+                  if (
+                    rawStatus.includes("no_answer") ||
+                    rawStatus.includes("did_not_pickup") ||
+                    rawStatus.includes("dial_no_answer")
+                  )
+                    return "did not pickup";
+                  return rawStatus.replace(/_/g, " ");
+                })();
+                return (
+                  business.includes(ql) ||
+                  phone.includes(ql) ||
+                  rawStatus.includes(ql) ||
+                  friendly.includes(ql)
+                );
+              })
             : mapped;
           setCalls(filtered);
+
+          // compute phones with outbound and inbound interactions
+          const phones = Array.from(
+            new Set(
+              filtered.map((c) => c.phone).filter((p): p is string => !!p)
+            )
+          );
+          if (phones.length > 0) {
+            // Get phones with outbound messages
+            const { data: outboundData } = await supabase
+              .from("interactions")
+              .select("phone")
+              .in("phone", phones)
+              .not("outbound", "is", null);
+            const outboundSet = new Set<string>();
+            (outboundData || []).forEach((i: { phone?: string | null }) => {
+              if (i.phone) outboundSet.add(String(i.phone));
+            });
+            setPhonesWithOutbound(outboundSet);
+
+            // Get phones with inbound messages (replies)
+            const { data: inboundData } = await supabase
+              .from("interactions")
+              .select("phone")
+              .in("phone", phones)
+              .not("inbound", "is", null);
+            const inboundSet = new Set<string>();
+            (inboundData || []).forEach((i: { phone?: string | null }) => {
+              if (i.phone) inboundSet.add(String(i.phone));
+            });
+            setPhonesWithReplies(inboundSet);
+          } else {
+            setPhonesWithOutbound(new Set());
+            setPhonesWithReplies(new Set());
+          }
         }
       } catch (error) {
         console.error("Error:", error);
@@ -75,8 +148,8 @@ function CallsContent() {
 
     fetchCalls();
 
-    // Set up real-time subscription
-    const channel = supabase
+    // Set up real-time subscription for calls
+    const callsChannel = supabase
       .channel("calls-realtime")
       .on(
         "postgres_changes",
@@ -87,8 +160,22 @@ function CallsContent() {
       )
       .subscribe();
 
+    // Set up real-time subscription for interactions to update message status
+    const interactionsChannel = supabase
+      .channel("interactions-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "interactions" },
+        () => {
+          // Refresh interactions data when interactions change
+          fetchCalls();
+        }
+      )
+      .subscribe();
+
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(callsChannel);
+      supabase.removeChannel(interactionsChannel);
     };
   }, [supabase, q]);
 
@@ -113,17 +200,65 @@ function CallsContent() {
             date: r.date,
           }));
           const filtered = q.trim()
-            ? mapped.filter(
-                (m) =>
-                  String(m.business || "")
-                    .toLowerCase()
-                    .includes(q.toLowerCase()) ||
-                  String(m.phone || "")
-                    .toLowerCase()
-                    .includes(q.toLowerCase())
-              )
+            ? mapped.filter((m) => {
+                const ql = q.toLowerCase();
+                const business = String(m.business || "").toLowerCase();
+                const phone = String(m.phone || "").toLowerCase();
+                const rawStatus = String(m.status || "").toLowerCase();
+                const friendly = (() => {
+                  if (rawStatus === "voicemail_reached") return "voicemail";
+                  if (rawStatus === "agent_hungup") return "agent hungup";
+                  if (
+                    rawStatus.includes("no_answer") ||
+                    rawStatus.includes("did_not_pickup") ||
+                    rawStatus.includes("dial_no_answer")
+                  )
+                    return "did not pickup";
+                  return rawStatus.replace(/_/g, " ");
+                })();
+                return (
+                  business.includes(ql) ||
+                  phone.includes(ql) ||
+                  rawStatus.includes(ql) ||
+                  friendly.includes(ql)
+                );
+              })
             : mapped;
           setCalls(filtered);
+
+          const phones = Array.from(
+            new Set(
+              filtered.map((c) => c.phone).filter((p): p is string => !!p)
+            )
+          );
+          if (phones.length > 0) {
+            // Get phones with outbound messages
+            const { data: outboundData } = await supabase
+              .from("interactions")
+              .select("phone")
+              .in("phone", phones)
+              .not("outbound", "is", null);
+            const outboundSet = new Set<string>();
+            (outboundData || []).forEach((i: { phone?: string | null }) => {
+              if (i.phone) outboundSet.add(String(i.phone));
+            });
+            setPhonesWithOutbound(outboundSet);
+
+            // Get phones with inbound messages (replies)
+            const { data: inboundData } = await supabase
+              .from("interactions")
+              .select("phone")
+              .in("phone", phones)
+              .not("inbound", "is", null);
+            const inboundSet = new Set<string>();
+            (inboundData || []).forEach((i: { phone?: string | null }) => {
+              if (i.phone) inboundSet.add(String(i.phone));
+            });
+            setPhonesWithReplies(inboundSet);
+          } else {
+            setPhonesWithOutbound(new Set());
+            setPhonesWithReplies(new Set());
+          }
         }
       } finally {
         setLoading(false);
@@ -140,24 +275,76 @@ function CallsContent() {
     return d.toLocaleDateString();
   }
 
+  // Fetch interactions when modal opens
+  useEffect(() => {
+    if (!modalOpen || !selectedPhone) {
+      setInteractions([]);
+      return;
+    }
+
+    async function fetchInteractions() {
+      setLoadingInteractions(true);
+      try {
+        const { data, error } = await supabase
+          .from("interactions")
+          .select("id,phone,outbound,inbound,created_at")
+          .eq("phone", selectedPhone)
+          .order("created_at", { ascending: true });
+
+        if (error) {
+          console.error("Error fetching interactions:", error);
+          setInteractions([]);
+        } else {
+          setInteractions(data || []);
+        }
+      } catch (error) {
+        console.error("Error:", error);
+        setInteractions([]);
+      } finally {
+        setLoadingInteractions(false);
+      }
+    }
+
+    fetchInteractions();
+
+    // Subscribe to changes
+    const channel = supabase
+      .channel(`interactions-${selectedPhone}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "interactions",
+          filter: `phone=eq.${selectedPhone}`,
+        },
+        () => fetchInteractions()
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [modalOpen, selectedPhone, supabase]);
+
   // removed old badge helper to keep component lean
 
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-3xl font-bold tracking-tight">Calls</h2>
+        <h2 className="text-3xl font-bold tracking-tight">Outreach</h2>
         <p className="text-muted-foreground">
-          View your call history and recordings from Retell.
+          View recent calls and SMS outreach.
         </p>
       </div>
 
       <div className="space-y-4">
         <div className="flex flex-wrap gap-3 rounded-lg">
           <input
-            placeholder="Search business or number..."
+            placeholder="Search business, number, or status..."
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            className="w-64 px-3 py-2 rounded-md bg-background border"
+            className="w-80 px-3 py-2 rounded-md bg-background border"
           />
           <button
             onClick={resetFilters}
@@ -182,11 +369,13 @@ function CallsContent() {
         ) : (
           <div className="bg-card rounded overflow-hidden text-sm">
             {/* Header Row */}
-            <div className="grid grid-cols-5 bg-muted h-11 items-center">
+            <div className="grid grid-cols-7 bg-muted h-11 items-center">
               <div className="px-3 font-medium">Business</div>
               <div className="px-3 font-medium">Phone</div>
               <div className="px-3 font-medium">Status</div>
+              <div className="px-3 font-medium">Time</div>
               <div className="px-3 font-medium">Date</div>
+              <div className="px-3 font-medium">Message</div>
               <div className="px-3 font-medium">Actions</div>
             </div>
 
@@ -195,10 +384,43 @@ function CallsContent() {
               const showSmsButton =
                 call.status === "voicemail_reached" ||
                 call.status === "dial_no_answer";
+              const friendlyStatus = (() => {
+                const s = String(call.status || "").toLowerCase();
+                if (s === "voicemail_reached") return "Voicemail";
+                if (s === "agent_hungup") return "Agent Hungup";
+                if (
+                  s.includes("no_answer") ||
+                  s.includes("did_not_pickup") ||
+                  s.includes("dial_no_answer")
+                )
+                  return "Did Not Pickup";
+                return s
+                  ? s
+                      .replace(/_/g, " ")
+                      .replace(/\b\w/g, (c) => c.toUpperCase())
+                  : "-";
+              })();
+              const timeAest = (() => {
+                const d = call.date ? new Date(call.date) : null;
+                return d
+                  ? d.toLocaleTimeString("en-AU", {
+                      timeZone: "Australia/Sydney",
+                      hour12: true,
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })
+                  : "-";
+              })();
               return (
                 <div
                   key={call.call_id}
-                  className="grid grid-cols-5 h-12 border-b bg-card items-center"
+                  className="grid grid-cols-7 h-12 border-b bg-card items-center cursor-pointer hover:bg-muted/50 transition-colors"
+                  onClick={() => {
+                    if (call.phone) {
+                      setSelectedPhone(call.phone);
+                      setModalOpen(true);
+                    }
+                  }}
                 >
                   <div className="px-3 truncate max-w-[260px]">
                     {call.business}
@@ -206,9 +428,17 @@ function CallsContent() {
                   <div className="px-3 truncate max-w-[200px]">
                     {call.phone ?? "N/A"}
                   </div>
-                  <div className="px-3 capitalize">{call.status ?? "-"}</div>
+                  <div className="px-3">{friendlyStatus}</div>
+                  <div className="px-3">{timeAest}</div>
                   <div className="px-3">{formatDate(call.date)}</div>
                   <div className="px-3">
+                    {call.phone && phonesWithReplies.has(call.phone)
+                      ? "Replied"
+                      : call.phone && phonesWithOutbound.has(call.phone)
+                      ? "Sent"
+                      : "-"}
+                  </div>
+                  <div className="px-3" onClick={(e) => e.stopPropagation()}>
                     {showSmsButton && (
                       <Button
                         variant="outline"
@@ -225,6 +455,19 @@ function CallsContent() {
                               throw new Error("failed");
                             }
                             toast.success("SMS sent");
+                            // Refresh outbound phones to update "Sent" indicator
+                            setPhonesWithOutbound(
+                              (prev) => new Set([...prev, call.phone!])
+                            );
+                            // Refresh modal if it's open for this phone
+                            if (modalOpen && selectedPhone === call.phone) {
+                              const { data } = await supabase
+                                .from("interactions")
+                                .select("id,phone,outbound,inbound,created_at")
+                                .eq("phone", call.phone)
+                                .order("created_at", { ascending: true });
+                              if (data) setInteractions(data);
+                            }
                           } catch {
                             toast.error("Failed to send SMS");
                           }
@@ -240,6 +483,91 @@ function CallsContent() {
           </div>
         )}
       </div>
+
+      {/* Interactions Modal */}
+      <Dialog open={modalOpen} onOpenChange={setModalOpen}>
+        <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>
+              Messages {selectedPhone ? `- ${selectedPhone}` : ""}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto space-y-4 mt-4">
+            {loadingInteractions ? (
+              <div className="flex justify-center py-8">
+                <Spinner size="lg" />
+              </div>
+            ) : interactions.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <div className="text-4xl mb-4">💬</div>
+                <p className="text-muted-foreground text-lg">
+                  No interaction has happened
+                </p>
+              </div>
+            ) : (
+              interactions
+                .sort(
+                  (a, b) =>
+                    new Date(a.created_at).getTime() -
+                    new Date(b.created_at).getTime()
+                )
+                .map((interaction) => {
+                  if (interaction.outbound) {
+                    return (
+                      <div
+                        key={interaction.id}
+                        className="flex justify-end items-start gap-2"
+                      >
+                        <div className="max-w-[70%] bg-primary text-primary-foreground rounded-lg px-4 py-2">
+                          <p className="text-sm">{interaction.outbound}</p>
+                          <p className="text-xs opacity-70 mt-1">
+                            {new Date(interaction.created_at).toLocaleString(
+                              "en-AU",
+                              {
+                                timeZone: "Australia/Sydney",
+                                hour12: true,
+                                hour: "2-digit",
+                                minute: "2-digit",
+                                day: "numeric",
+                                month: "short",
+                              }
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  }
+                  if (interaction.inbound) {
+                    return (
+                      <div
+                        key={interaction.id}
+                        className="flex justify-start items-start gap-2"
+                      >
+                        <div className="max-w-[70%] bg-muted rounded-lg px-4 py-2">
+                          <p className="text-sm">{interaction.inbound}</p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {new Date(interaction.created_at).toLocaleString(
+                              "en-AU",
+                              {
+                                timeZone: "Australia/Sydney",
+                                hour12: true,
+                                hour: "2-digit",
+                                minute: "2-digit",
+                                day: "numeric",
+                                month: "short",
+                              }
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  }
+                  return null;
+                })
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

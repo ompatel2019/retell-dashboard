@@ -6,7 +6,7 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
-  Phone,
+  MessageSquare,
   Settings,
   User,
   PanelRightClose,
@@ -27,9 +27,9 @@ const navigation = [
     icon: LayoutDashboard,
   },
   {
-    name: "Calls",
+    name: "Outreach",
     href: "/dashboard/calls",
-    icon: Phone,
+    icon: MessageSquare,
   },
   {
     name: "Settings",
