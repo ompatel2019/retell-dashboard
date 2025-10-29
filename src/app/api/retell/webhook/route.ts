@@ -182,6 +182,31 @@ export async function POST(req: Request) {
       const callDate =
         toDate(call.start_timestamp ?? call.started_at) ?? new Date();
 
+      // Check if this phone number already exists (i.e., called again)
+      const { data: existingCall } = await supabase
+        .from("calls")
+        .select("id")
+        .eq("phone", customerNumber)
+        .maybeSingle();
+
+      // If number was called again, clear all previous interactions
+      // (new call = fresh start, no prior messages)
+      if (existingCall) {
+        console.log(
+          "⚠ Phone number called AGAIN - clearing previous interactions"
+        );
+        const { error: deleteInteractionsErr } = await supabase
+          .from("interactions")
+          .delete()
+          .eq("phone", customerNumber);
+
+        if (deleteInteractionsErr) {
+          console.error("Error clearing interactions:", deleteInteractionsErr);
+        } else {
+          console.log("✓ Cleared previous interactions for", customerNumber);
+        }
+      }
+
       console.log("=== UPSERTING TO CALLS TABLE ===");
       console.log({
         business_name: businessName,

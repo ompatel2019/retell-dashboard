@@ -41,16 +41,19 @@ function DashboardContent() {
         setRecent((data as SimpleCall[] | null) ?? []);
 
         // Interactions metrics
+        // Count phones with outbound messages (array not empty)
         const sentRes = await supabase
           .from("interactions")
-          .select("id", { count: "exact", head: true })
-          .not("outbound", "is", null);
+          .select("phone")
+          .neq("outbound", "[]");
+        
+        // Count phones with inbound messages (recent_reply is not null)
         const repliesRes = await supabase
           .from("interactions")
           .select("phone")
-          .not("inbound", "is", null);
+          .not("recent_reply", "is", null);
 
-        const sent = sentRes.count ?? 0;
+        const sent = sentRes.data?.length ?? 0;
         // Count distinct phone numbers (one per number, regardless of reply count)
         const uniquePhonesWithReplies = new Set(
           (repliesRes.data ?? []).map((r) => r.phone)

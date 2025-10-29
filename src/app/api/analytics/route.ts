@@ -4,8 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 // Example API returning tenant-scoped analytics via RLS
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const period = searchParams.get('period') || undefined; // undefined means analytics page (no KPIs-only mode)
-  const wantRecent = searchParams.get('recent') === '1';
+  const period = searchParams.get("period") || undefined; // undefined means analytics page (no KPIs-only mode)
+  const wantRecent = searchParams.get("recent") === "1";
 
   const supabase = await createClient();
 
@@ -37,27 +37,27 @@ export async function GET(request: Request) {
   const computePeriodStart = (p: string | undefined) => {
     const base = new Date(now);
     switch (p) {
-      case 'today': {
+      case "today": {
         base.setHours(0, 0, 0, 0);
         return base;
       }
-      case '24h': {
+      case "24h": {
         base.setHours(base.getHours() - 24);
         return base;
       }
-      case '7d': {
+      case "7d": {
         base.setDate(base.getDate() - 7);
         return base;
       }
-      case '14d': {
+      case "14d": {
         base.setDate(base.getDate() - 14);
         return base;
       }
-      case '30d': {
+      case "30d": {
         base.setDate(base.getDate() - 30);
         return base;
       }
-      case 'all':
+      case "all":
         return new Date(0);
       default: {
         // default 7d if period mode is requested without a recognized value
@@ -127,7 +127,12 @@ export async function GET(request: Request) {
         .order("started_at", { ascending: false })
     : Promise.resolve({ data: undefined, error: null } as const);
 
-  const [{ data: daily, error: dailyErr }, { data: reasons }, { data: repeatCallers, error: repeatErr }, { data: recent }] = await Promise.all([
+  const [
+    { data: daily, error: dailyErr },
+    { data: reasons },
+    { data: repeatCallers, error: repeatErr },
+    { data: recent },
+  ] = await Promise.all([
     dailyPromise,
     reasonsPromise,
     repeatPromise,
@@ -145,7 +150,7 @@ export async function GET(request: Request) {
     reasonsCount: reasons?.length ?? 0,
     repeatCallersCount: repeatCallers?.length ?? 0,
     reasonsError: reasons ? null : "No reasons data",
-    repeatError: repeatErr?.message ?? null
+    repeatError: repeatErr?.message ?? null,
   });
 
   // Accumulate windows from daily rows
@@ -161,15 +166,25 @@ export async function GET(request: Request) {
         acc.completed += r.completed ?? 0;
         acc.missed += r.missed ?? 0;
         acc.failed += r.failed ?? 0;
-        if (typeof r.avg_duration_sec === "number") acc.avgDurations.push(r.avg_duration_sec);
+        if (typeof r.avg_duration_sec === "number")
+          acc.avgDurations.push(r.avg_duration_sec);
         return acc;
       },
-      { total: 0, completed: 0, missed: 0, failed: 0, avgDurations: [] as number[] }
+      {
+        total: 0,
+        completed: 0,
+        missed: 0,
+        failed: 0,
+        avgDurations: [] as number[],
+      }
     );
     const denom = totals.completed + totals.missed + totals.failed;
     const answerRate = denom === 0 ? 0 : totals.completed / denom;
     const avgDuration = totals.avgDurations.length
-      ? Math.round(totals.avgDurations.reduce((a, b) => a + b, 0) / totals.avgDurations.length)
+      ? Math.round(
+          totals.avgDurations.reduce((a, b) => a + b, 0) /
+            totals.avgDurations.length
+        )
       : 0;
     return { ...totals, answerRate, avgDuration };
   };
@@ -196,18 +211,36 @@ export async function GET(request: Request) {
         p_end: now.toISOString(),
       }),
     ]);
-    ftPeriod = (ftPeriodRes.error || typeof ftPeriodRes.data !== "number") ? 0 : (ftPeriodRes.data as number);
-    ft7 = (ft7Res.error || typeof ft7Res.data !== "number") ? 0 : (ft7Res.data as number);
-    ft30 = (ft30Res.error || typeof ft30Res.data !== "number") ? 0 : (ft30Res.data as number);
+    ftPeriod =
+      ftPeriodRes.error || typeof ftPeriodRes.data !== "number"
+        ? 0
+        : (ftPeriodRes.data as number);
+    ft7 =
+      ft7Res.error || typeof ft7Res.data !== "number"
+        ? 0
+        : (ft7Res.data as number);
+    ft30 =
+      ft30Res.error || typeof ft30Res.data !== "number"
+        ? 0
+        : (ft30Res.data as number);
   }
 
   const kpis7 = sumWindow(sevenDaysAgo, now);
   const kpis30 = sumWindow(thirtyDaysAgo, now);
   const kpisToday = sumWindow(todayStart, now);
-  
+
   // Calculate metrics for selected period
-  let kpisPeriod: { total: number; completed: number; missed: number; failed: number; answerRate: number; avgDuration: number } | undefined;
-  if (period === 'today') {
+  let kpisPeriod:
+    | {
+        total: number;
+        completed: number;
+        missed: number;
+        failed: number;
+        answerRate: number;
+        avgDuration: number;
+      }
+    | undefined;
+  if (period === "today") {
     // For today, query the calls table directly to get real-time data
     const { data: todayCalls, error: todayErr } = await supabase
       .from("calls")
@@ -215,21 +248,43 @@ export async function GET(request: Request) {
       .eq("business_id", biz.id)
       .gte("started_at", todayStart.toISOString())
       .lt("started_at", now.toISOString());
-    
+
     if (todayErr) {
       console.error("Error fetching today's calls:", todayErr);
-      kpisPeriod = { total: 0, completed: 0, missed: 0, failed: 0, answerRate: 0, avgDuration: 0 };
+      kpisPeriod = {
+        total: 0,
+        completed: 0,
+        missed: 0,
+        failed: 0,
+        answerRate: 0,
+        avgDuration: 0,
+      };
     } else {
       const total = todayCalls?.length || 0;
-      const completed = todayCalls?.filter(c => c.status === 'completed').length || 0;
-      const missed = todayCalls?.filter(c => c.status === 'missed').length || 0;
-      const failed = todayCalls?.filter(c => c.status === 'failed').length || 0;
-      const durations = todayCalls?.map(c => c.duration_seconds).filter(d => d && d > 0) || [];
-      const avgDuration = durations.length > 0 ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length) : 0;
+      const completed =
+        todayCalls?.filter((c) => c.status === "completed").length || 0;
+      const missed =
+        todayCalls?.filter((c) => c.status === "missed").length || 0;
+      const failed =
+        todayCalls?.filter((c) => c.status === "failed").length || 0;
+      const durations =
+        todayCalls?.map((c) => c.duration_seconds).filter((d) => d && d > 0) ||
+        [];
+      const avgDuration =
+        durations.length > 0
+          ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length)
+          : 0;
       const denom = completed + missed + failed;
       const answerRate = denom === 0 ? 0 : completed / denom;
-      
-      kpisPeriod = { total, completed, missed, failed, answerRate, avgDuration };
+
+      kpisPeriod = {
+        total,
+        completed,
+        missed,
+        failed,
+        answerRate,
+        avgDuration,
+      };
     }
   } else if (period) {
     kpisPeriod = sumWindow(periodStart!, now);
@@ -242,19 +297,38 @@ export async function GET(request: Request) {
   // When period is requested, return KPIs; otherwise, return analytics datasets
   if (period) {
     responsePayload.kpis = {
-      today: { total: kpisToday.total, answerRate: kpisToday.answerRate, avgDuration: kpisToday.avgDuration },
-      last7d: { total: kpis7.total, answerRate: kpis7.answerRate, avgDuration: kpis7.avgDuration, firstTimeCallers: ft7 },
-      last30d: { total: kpis30.total, answerRate: kpis30.answerRate, avgDuration: kpis30.avgDuration, firstTimeCallers: ft30 },
-      selectedPeriod: { total: (kpisPeriod?.total ?? 0), answerRate: (kpisPeriod?.answerRate ?? 0), avgDuration: (kpisPeriod?.avgDuration ?? 0), firstTimeCallers: ftPeriod },
+      today: {
+        total: kpisToday.total,
+        answerRate: kpisToday.answerRate,
+        avgDuration: kpisToday.avgDuration,
+      },
+      last7d: {
+        total: kpis7.total,
+        answerRate: kpis7.answerRate,
+        avgDuration: kpis7.avgDuration,
+        firstTimeCallers: ft7,
+      },
+      last30d: {
+        total: kpis30.total,
+        answerRate: kpis30.answerRate,
+        avgDuration: kpis30.avgDuration,
+        firstTimeCallers: ft30,
+      },
+      selectedPeriod: {
+        total: kpisPeriod?.total ?? 0,
+        answerRate: kpisPeriod?.answerRate ?? 0,
+        avgDuration: kpisPeriod?.avgDuration ?? 0,
+        firstTimeCallers: ftPeriod,
+      },
     };
   } else {
     responsePayload.series = daily ?? [];
-    
+
     // Process disconnection reasons from raw call data
     if (reasons && Array.isArray(reasons)) {
       const reasonCounts: Record<string, number> = {};
-      reasons.forEach(call => {
-        const reason = call.disconnection_reason || 'unknown';
+      reasons.forEach((call) => {
+        const reason = call.disconnection_reason || "unknown";
         reasonCounts[reason] = (reasonCounts[reason] || 0) + 1;
       });
       responsePayload.reasons = Object.entries(reasonCounts)
@@ -263,11 +337,12 @@ export async function GET(request: Request) {
     } else {
       responsePayload.reasons = [];
     }
-    
+
     // Process repeat callers from raw call data
     if (repeatCallers && Array.isArray(repeatCallers)) {
-      const callerCounts: Record<string, { calls: number; last_call: string }> = {};
-      repeatCallers.forEach(call => {
+      const callerCounts: Record<string, { calls: number; last_call: string }> =
+        {};
+      repeatCallers.forEach((call) => {
         const number = call.from_number;
         if (!callerCounts[number]) {
           callerCounts[number] = { calls: 0, last_call: call.started_at };
@@ -300,5 +375,3 @@ export async function GET(request: Request) {
     },
   });
 }
-
-

@@ -46,11 +46,9 @@ function CallsContent() {
   const [selectedPhone, setSelectedPhone] = useState<string | null>(null);
   const [interactions, setInteractions] = useState<
     Array<{
-      id: string;
-      phone: string;
-      outbound: string | null;
-      inbound: string | null;
-      created_at: string;
+      message: string;
+      timestamp: string;
+      type: "outbound" | "inbound";
     }>
   >([]);
   const [loadingInteractions, setLoadingInteractions] = useState(false);
@@ -112,24 +110,24 @@ function CallsContent() {
             )
           );
           if (phones.length > 0) {
-            // Get phones with outbound messages
+            // Get phones with outbound messages (array not empty)
             const { data: outboundData } = await supabase
               .from("interactions")
               .select("phone")
               .in("phone", phones)
-              .not("outbound", "is", null);
+              .neq("outbound", "[]");
             const outboundSet = new Set<string>();
             (outboundData || []).forEach((i: { phone?: string | null }) => {
               if (i.phone) outboundSet.add(String(i.phone));
             });
             setPhonesWithOutbound(outboundSet);
 
-            // Get phones with inbound messages (replies)
+            // Get phones with inbound messages (replies) - check recent_reply
             const { data: inboundData } = await supabase
               .from("interactions")
               .select("phone")
               .in("phone", phones)
-              .not("inbound", "is", null);
+              .not("recent_reply", "is", null);
             const inboundSet = new Set<string>();
             (inboundData || []).forEach((i: { phone?: string | null }) => {
               if (i.phone) inboundSet.add(String(i.phone));
@@ -233,24 +231,24 @@ function CallsContent() {
             )
           );
           if (phones.length > 0) {
-            // Get phones with outbound messages
+            // Get phones with outbound messages (array not empty)
             const { data: outboundData } = await supabase
               .from("interactions")
               .select("phone")
               .in("phone", phones)
-              .not("outbound", "is", null);
+              .neq("outbound", "[]");
             const outboundSet = new Set<string>();
             (outboundData || []).forEach((i: { phone?: string | null }) => {
               if (i.phone) outboundSet.add(String(i.phone));
             });
             setPhonesWithOutbound(outboundSet);
 
-            // Get phones with inbound messages (replies)
+            // Get phones with inbound messages (replies) - check recent_reply
             const { data: inboundData } = await supabase
               .from("interactions")
               .select("phone")
               .in("phone", phones)
-              .not("inbound", "is", null);
+              .not("recent_reply", "is", null);
             const inboundSet = new Set<string>();
             (inboundData || []).forEach((i: { phone?: string | null }) => {
               if (i.phone) inboundSet.add(String(i.phone));
@@ -288,15 +286,45 @@ function CallsContent() {
       try {
         const { data, error } = await supabase
           .from("interactions")
-          .select("id,phone,outbound,inbound,created_at")
+          .select("outbound,inbound")
           .eq("phone", selectedPhone)
-          .order("created_at", { ascending: true });
+          .maybeSingle();
 
         if (error) {
           console.error("Error fetching interactions:", error);
           setInteractions([]);
+        } else if (data) {
+          // Combine outbound and inbound messages, sorted by timestamp
+          const messages: Array<{
+            message: string;
+            timestamp: string;
+            type: "outbound" | "inbound";
+          }> = [];
+
+          const outbound =
+            (data.outbound as Array<{ message: string; timestamp: string }>) ||
+            [];
+          const inbound =
+            (data.inbound as Array<{ message: string; timestamp: string }>) ||
+            [];
+
+          outbound.forEach((msg) => {
+            messages.push({ ...msg, type: "outbound" });
+          });
+
+          inbound.forEach((msg) => {
+            messages.push({ ...msg, type: "inbound" });
+          });
+
+          // Sort by timestamp
+          messages.sort(
+            (a, b) =>
+              new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+          );
+
+          setInteractions(messages);
         } else {
-          setInteractions(data || []);
+          setInteractions([]);
         }
       } catch (error) {
         console.error("Error:", error);
@@ -470,10 +498,38 @@ function CallsContent() {
                             if (modalOpen && selectedPhone === call.phone) {
                               const { data } = await supabase
                                 .from("interactions")
-                                .select("id,phone,outbound,inbound,created_at")
+                                .select("outbound,inbound")
                                 .eq("phone", call.phone)
-                                .order("created_at", { ascending: true });
-                              if (data) setInteractions(data);
+                                .maybeSingle();
+                              if (data) {
+                                const messages: Array<{
+                                  message: string;
+                                  timestamp: string;
+                                  type: "outbound" | "inbound";
+                                }> = [];
+                                const outbound =
+                                  (data.outbound as Array<{
+                                    message: string;
+                                    timestamp: string;
+                                  }>) || [];
+                                const inbound =
+                                  (data.inbound as Array<{
+                                    message: string;
+                                    timestamp: string;
+                                  }>) || [];
+                                outbound.forEach((msg) =>
+                                  messages.push({ ...msg, type: "outbound" })
+                                );
+                                inbound.forEach((msg) =>
+                                  messages.push({ ...msg, type: "inbound" })
+                                );
+                                messages.sort(
+                                  (a, b) =>
+                                    new Date(a.timestamp).getTime() -
+                                    new Date(b.timestamp).getTime()
+                                );
+                                setInteractions(messages);
+                              }
                             }
                           } catch {
                             toast.error("Failed to send SMS");
@@ -512,65 +568,59 @@ function CallsContent() {
                 </p>
               </div>
             ) : (
-              interactions
-                .sort(
-                  (a, b) =>
-                    new Date(a.created_at).getTime() -
-                    new Date(b.created_at).getTime()
-                )
-                .map((interaction) => {
-                  if (interaction.outbound) {
-                    return (
-                      <div
-                        key={interaction.id}
-                        className="flex justify-end items-start gap-2"
-                      >
-                        <div className="max-w-[70%] bg-primary text-primary-foreground rounded-lg px-4 py-2">
-                          <p className="text-sm">{interaction.outbound}</p>
-                          <p className="text-xs opacity-70 mt-1">
-                            {new Date(interaction.created_at).toLocaleString(
-                              "en-AU",
-                              {
-                                timeZone: "Australia/Sydney",
-                                hour12: true,
-                                hour: "2-digit",
-                                minute: "2-digit",
-                                day: "numeric",
-                                month: "short",
-                              }
-                            )}
-                          </p>
-                        </div>
+              interactions.map((interaction, index) => {
+                if (interaction.type === "outbound") {
+                  return (
+                    <div
+                      key={`outbound-${index}`}
+                      className="flex justify-end items-start gap-2"
+                    >
+                      <div className="max-w-[70%] bg-primary text-primary-foreground rounded-lg px-4 py-2">
+                        <p className="text-sm">{interaction.message}</p>
+                        <p className="text-xs opacity-70 mt-1">
+                          {new Date(interaction.timestamp).toLocaleString(
+                            "en-AU",
+                            {
+                              timeZone: "Australia/Sydney",
+                              hour12: true,
+                              hour: "2-digit",
+                              minute: "2-digit",
+                              day: "numeric",
+                              month: "short",
+                            }
+                          )}
+                        </p>
                       </div>
-                    );
-                  }
-                  if (interaction.inbound) {
-                    return (
-                      <div
-                        key={interaction.id}
-                        className="flex justify-start items-start gap-2"
-                      >
-                        <div className="max-w-[70%] bg-muted rounded-lg px-4 py-2">
-                          <p className="text-sm">{interaction.inbound}</p>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            {new Date(interaction.created_at).toLocaleString(
-                              "en-AU",
-                              {
-                                timeZone: "Australia/Sydney",
-                                hour12: true,
-                                hour: "2-digit",
-                                minute: "2-digit",
-                                day: "numeric",
-                                month: "short",
-                              }
-                            )}
-                          </p>
-                        </div>
+                    </div>
+                  );
+                }
+                if (interaction.type === "inbound") {
+                  return (
+                    <div
+                      key={`inbound-${index}`}
+                      className="flex justify-start items-start gap-2"
+                    >
+                      <div className="max-w-[70%] bg-muted rounded-lg px-4 py-2">
+                        <p className="text-sm">{interaction.message}</p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {new Date(interaction.timestamp).toLocaleString(
+                            "en-AU",
+                            {
+                              timeZone: "Australia/Sydney",
+                              hour12: true,
+                              hour: "2-digit",
+                              minute: "2-digit",
+                              day: "numeric",
+                              month: "short",
+                            }
+                          )}
+                        </p>
                       </div>
-                    );
-                  }
-                  return null;
-                })
+                    </div>
+                  );
+                }
+                return null;
+              })
             )}
           </div>
         </DialogContent>

@@ -33,7 +33,7 @@ export async function POST(req: Request) {
   try {
     const client = twilio(twilioSid, twilioToken);
     const messageBody =
-      "hi, i tried calling but no one answered. this could've been a $1,000 customer but thankfully it's not. however, i build something that captures missed calls so you don't ACTUALLY miss $1,000 customers. reply with a YES and we'll personally call you - for a free trial 😊";
+      "hi, i tried calling but no one answered. this could've been a $1,000 customer but thankfully it's not. however, i built something that takes missed calls for you so you don't ACTUALLY miss $1,000 customers. reply with a YES and we'll personally call you - for a free trial :)";
 
     const message = await client.messages.create({
       body: messageBody,
@@ -41,13 +41,31 @@ export async function POST(req: Request) {
       to: body.phoneNumber,
     });
 
-    // Store in interactions table
+    // Store in interactions table - upsert and append to outbound array
     const serviceSupabase = createServiceRoleClient();
-    await serviceSupabase.from("interactions").insert({
-      phone: body.phoneNumber,
-      outbound: messageBody,
-      inbound: null,
-    });
+    const timestamp = new Date().toISOString();
+    const newOutboundEntry = { message: messageBody, timestamp };
+
+    // Get existing row or create new one
+    const { data: existing } = await serviceSupabase
+      .from("interactions")
+      .select("outbound, inbound")
+      .eq("phone", body.phoneNumber)
+      .maybeSingle();
+
+    const existingOutbound =
+      (existing?.outbound as Array<{ message: string; timestamp: string }>) ||
+      [];
+    const updatedOutbound = [...existingOutbound, newOutboundEntry];
+
+    await serviceSupabase.from("interactions").upsert(
+      {
+        phone: body.phoneNumber,
+        outbound: updatedOutbound,
+        inbound: existing?.inbound || [],
+      },
+      { onConflict: "phone" }
+    );
 
     return NextResponse.json({
       ok: true,

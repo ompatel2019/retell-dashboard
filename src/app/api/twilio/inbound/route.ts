@@ -28,16 +28,33 @@ export async function POST(req: Request) {
 
     const supabase = createServiceRoleClient();
 
-    // Store inbound SMS in interactions table
+    // Store inbound SMS in interactions table - upsert and append to inbound array
     console.log("[inbound] storing inbound SMS in interactions table");
-    const { error: insertErr } = await supabase.from("interactions").insert({
-      phone: from,
-      outbound: null,
-      inbound: body,
-    });
+    const timestamp = new Date().toISOString();
+    const newInboundEntry = { message: body, timestamp };
+    
+    // Get existing row or create new one
+    const { data: existing } = await supabase
+      .from("interactions")
+      .select("outbound, inbound")
+      .eq("phone", from)
+      .maybeSingle();
+    
+    const existingInbound = (existing?.inbound as Array<{message: string, timestamp: string}>) || [];
+    const updatedInbound = [...existingInbound, newInboundEntry];
+    
+    const { error: upsertErr } = await supabase.from("interactions").upsert(
+      {
+        phone: from,
+        outbound: existing?.outbound || [],
+        inbound: updatedInbound,
+        recent_reply: body, // Store last message as recent_reply
+      },
+      { onConflict: "phone" }
+    );
 
-    if (insertErr) {
-      console.error("[inbound] error inserting into interactions", insertErr);
+    if (upsertErr) {
+      console.error("[inbound] error upserting into interactions", upsertErr);
     } else {
       console.log("[inbound] stored inbound SMS in interactions for phone:", from);
     }
