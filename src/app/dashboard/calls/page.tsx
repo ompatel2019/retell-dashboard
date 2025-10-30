@@ -80,8 +80,7 @@ function CallsContent() {
       const { data, error } = await supabase
         .from("calls")
         .select("id,business_name,phone,status,date")
-        .order("date", { ascending: false })
-        .limit(100);
+        .order("date", { ascending: false });
 
       if (error) {
         console.error("Error fetching calls:", error);
@@ -286,7 +285,8 @@ function CallsContent() {
     q.trim() || outcomeFilter.length > 0 || statusFilter
   );
   const allRowsSelected =
-    filteredCalls.length > 0 && selectedRows.size === filteredCalls.length;
+    filteredCalls.length > 0 &&
+    filteredCalls.every((c) => selectedRows.has(c.call_id));
 
   // Format outcome for display
   const formatOutcome = (status: string) => {
@@ -781,6 +781,7 @@ function CallsContent() {
                 </div>
               );
             })}
+            {/* End of table */}
           </div>
         )}
       </div>
