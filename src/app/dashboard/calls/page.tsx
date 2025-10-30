@@ -16,6 +16,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -61,7 +70,7 @@ function CallsContent() {
   >([]);
   const [loadingInteractions, setLoadingInteractions] = useState(false);
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
-  const [outcomeFilter, setOutcomeFilter] = useState<string | null>(null);
+  const [outcomeFilter, setOutcomeFilter] = useState<string[]>([]);
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
   const [sendingSmsToMultiple, setSendingSmsToMultiple] = useState(false);
 
@@ -103,7 +112,10 @@ function CallsContent() {
         return;
       }
 
-      const [{ data: outboundData, error: outboundError }, { data: inboundData, error: inboundError }] = await Promise.all([
+      const [
+        { data: outboundData, error: outboundError },
+        { data: inboundData, error: inboundError },
+      ] = await Promise.all([
         supabase
           .from("interactions")
           .select("phone")
@@ -200,8 +212,10 @@ function CallsContent() {
         if (!matches) return false;
       }
 
-      if (outcomeFilter && call.status !== outcomeFilter) {
-        return false;
+      if (outcomeFilter.length > 0) {
+        if (!call.status || !outcomeFilter.includes(call.status)) {
+          return false;
+        }
       }
 
       if (statusFilter) {
@@ -248,7 +262,7 @@ function CallsContent() {
 
   const resetFilters = () => {
     setQ("");
-    setOutcomeFilter(null);
+    setOutcomeFilter([]);
     setStatusFilter(null);
     setSelectedRows(new Set());
   };
@@ -263,17 +277,16 @@ function CallsContent() {
   const uniqueOutcomes = useMemo(
     () =>
       Array.from(
-        new Set(
-          rawCalls.map((c) => c.status).filter((s): s is string => !!s)
-        )
+        new Set(rawCalls.map((c) => c.status).filter((s): s is string => !!s))
       ).sort(),
     [rawCalls]
   );
 
-  const hasActiveFilters = Boolean(q.trim() || outcomeFilter || statusFilter);
+  const hasActiveFilters = Boolean(
+    q.trim() || outcomeFilter.length > 0 || statusFilter
+  );
   const allRowsSelected =
-    filteredCalls.length > 0 &&
-    selectedRows.size === filteredCalls.length;
+    filteredCalls.length > 0 && selectedRows.size === filteredCalls.length;
 
   // Format outcome for display
   const formatOutcome = (status: string) => {
@@ -287,6 +300,19 @@ function CallsContent() {
       return "Did Not Pickup";
     return status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
   };
+
+  const outcomeButtonLabel = (() => {
+    if (outcomeFilter.length === 0) return "All Outcomes";
+    if (outcomeFilter.length === 1) return formatOutcome(outcomeFilter[0]);
+    if (outcomeFilter.length === 2) {
+      return `${formatOutcome(outcomeFilter[0])} + ${formatOutcome(
+        outcomeFilter[1]
+      )}`;
+    }
+    return `${formatOutcome(outcomeFilter[0])} + ${
+      outcomeFilter.length - 1
+    } more`;
+  })();
 
   // Bulk SMS action
   const handleBulkSMS = async () => {
@@ -443,24 +469,57 @@ function CallsContent() {
                   className="h-10 shadow-inner"
                 />
               </div>
-              <Select
-                value={outcomeFilter ?? "all"}
-                onValueChange={(value) =>
-                  setOutcomeFilter(value === "all" ? null : value)
-                }
-              >
-                <SelectTrigger className="h-10 w-full sm:w-48 bg-background/80">
-                  <SelectValue placeholder="All Outcomes" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Outcomes</SelectItem>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-10 w-full justify-between rounded-full bg-background/80 px-3 font-medium sm:w-56"
+                  >
+                    <span className="truncate text-left text-sm">
+                      {outcomeButtonLabel}
+                    </span>
+                    <span className="text-xs font-semibold text-muted-foreground">
+                      {outcomeFilter.length > 0
+                        ? `${outcomeFilter.length}`
+                        : "All"}
+                    </span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent className="w-60">
+                  <DropdownMenuLabel>Select call outcomes</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
                   {uniqueOutcomes.map((outcome) => (
-                    <SelectItem key={outcome} value={outcome}>
+                    <DropdownMenuCheckboxItem
+                      key={outcome}
+                      checked={outcomeFilter.includes(outcome)}
+                      onCheckedChange={(checked) => {
+                        setOutcomeFilter((prev) => {
+                          const shouldAdd = checked === true;
+                          if (shouldAdd) {
+                            if (prev.includes(outcome)) return prev;
+                            return [...prev, outcome];
+                          }
+                          return prev.filter((status) => status !== outcome);
+                        });
+                      }}
+                    >
                       {formatOutcome(outcome)}
-                    </SelectItem>
+                    </DropdownMenuCheckboxItem>
                   ))}
-                </SelectContent>
-              </Select>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    disabled={outcomeFilter.length === 0}
+                    onSelect={(event) => {
+                      event.preventDefault();
+                      setOutcomeFilter([]);
+                    }}
+                    className="text-xs text-muted-foreground hover:text-destructive"
+                  >
+                    Clear selection
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
               <Select
                 value={statusFilter ?? "all"}
                 onValueChange={(value) =>
@@ -515,7 +574,7 @@ function CallsContent() {
         ) : filteredCalls.length === 0 ? (
           <div className="bg-card rounded-lg p-6">
             <p className="text-muted-foreground">
-              {q || outcomeFilter || statusFilter
+              {q || outcomeFilter.length > 0 || statusFilter
                 ? "No calls match your current filters. Try adjusting your search criteria."
                 : "No calls found. Make a call to your Retell number to see data here."}
             </p>
@@ -602,10 +661,7 @@ function CallsContent() {
                   role={call.phone ? "button" : undefined}
                   tabIndex={call.phone ? 0 : -1}
                 >
-                  <div
-                    className="px-3"
-                    onClick={(e) => e.stopPropagation()}
-                  >
+                  <div className="px-3" onClick={(e) => e.stopPropagation()}>
                     <input
                       type="checkbox"
                       checked={isSelected}
